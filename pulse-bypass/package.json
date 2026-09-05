@@ -6,7 +6,9 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win --x64",
-    "dev": "electron . --inspect"
+    "dev": "electron . --inspect",
+    "fetch-engine": "node scripts/download-zapret.js",
+    "predist": "npm run fetch-engine"
   },
   "keywords": [
     "bypass",
@@ -23,7 +25,8 @@
   },
   "devDependencies": {
     "electron": "^28.0.0",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "adm-zip": "^0.5.10"
   },
   "build": {
     "appId": "com.pulsebypass.app",

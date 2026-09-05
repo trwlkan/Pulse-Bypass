@@ -1,7 +1,7 @@
 'use strict';
 
 const { EventEmitter } = require('events');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -53,6 +53,32 @@ class ZapretManager extends EventEmitter {
 
   isEngineInstalled() {
     try { return fs.existsSync(this.binPath); } catch (e) { return false; }
+  }
+
+  /** Принудительно убивает ВСЕ процессы winws.exe в системе, а не только тот,
+   *  что запустила текущая сессия приложения. Это нужно на случай, если
+   *  предыдущий запуск приложения был закрыт аварийно (сбой, "Завершить
+   *  процесс" в диспетчере задач) — Windows не убивает дочерние процессы
+   *  автоматически при падении родителя, и осиротевший winws.exe продолжает
+   *  перехватывать трафик через WinDivert в фоне, никак не будучи виден
+   *  текущей сессии приложения. Вызывается перед стартом и при остановке.
+   *
+   *  WinDivert — это драйвер уровня ядра, который регистрируется как
+   *  ОТДЕЛЬНАЯ служба Windows ("WinDivert"/"WinDivert14"), а не просто
+   *  хендл внутри процесса winws.exe. Убийство самого процесса останавливает
+   *  активный перехват (без открытого хендла драйвер ничего не изменяет),
+   *  но сама служба может остаться загруженной в системе. Поэтому вдобавок
+   *  явно останавливаем и удаляем её — как это делает штатный service.bat
+   *  из официальной сборки zapret.
+   */
+  killAllInstances() {
+    if (process.platform !== 'win32') return Promise.resolve();
+    const run = (cmd, args) => new Promise((resolve) => execFile(cmd, args, () => resolve()));
+    return run('taskkill', ['/F', '/IM', 'winws.exe', '/T'])
+      .then(() => run('net', ['stop', 'WinDivert']))
+      .then(() => run('sc', ['delete', 'WinDivert']))
+      .then(() => run('net', ['stop', 'WinDivert14']))
+      .then(() => run('sc', ['delete', 'WinDivert14']));
   }
 
   async ensureEngine() {
@@ -124,6 +150,7 @@ class ZapretManager extends EventEmitter {
   /** Запускает winws.exe с указанной стратегией. */
   async start(strategyId) {
     if (this.proc) await this.stop();
+    await this.killAllInstances();
 
     const installed = await this.ensureEngine();
     if (!installed) {
@@ -189,16 +216,27 @@ class ZapretManager extends EventEmitter {
   }
 
   async stop() {
-    if (!this.proc) { this._setStatus('stopped'); return true; }
-    return new Promise((resolve) => {
+    if (!this.proc) {
+      // Даже если у текущей сессии нет своего процесса — на всякий случай
+      // убиваем любой осиротевший winws.exe от предыдущего запуска, иначе
+      // он молча продолжит перехватывать трафик в фоне.
+      await this.killAllInstances();
+      this._setStatus('stopped');
+      return true;
+    }
+    await new Promise((resolve) => {
       const p = this.proc;
       const timer = setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) {} }, 2000);
-      p.once('exit', () => { clearTimeout(timer); resolve(true); });
-      try { p.kill(); } catch (e) { resolve(true); }
+      p.once('exit', () => { clearTimeout(timer); resolve(); });
+      try { p.kill(); } catch (e) { resolve(); }
       this.proc = null;
       this.currentStrategyId = null;
-      this._setStatus('stopped');
     });
+    // Подчищаем и системно — WinDivert-хук иногда переживает завершение
+    // основного процесса на долю секунды, а также ловим любые другие копии.
+    await this.killAllInstances();
+    this._setStatus('stopped');
+    return true;
   }
 
   /** Проверяет, что TLS-хендшейк с host:port проходит (косвенный признак, что домен не режется DPI). */

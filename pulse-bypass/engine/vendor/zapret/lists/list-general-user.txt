@@ -1,2 +1,0 @@
-# Pulse Bypass: пользовательские домены появятся здесь
-domain.example.abc

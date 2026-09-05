@@ -10,96 +10,112 @@
  * назначения по открытому SNI и не блокировало/не резало соединение.
  * Реальный трафик сайта при этом не подделывается и не подменяется.
  *
- * Аргументы взяты из официальной сборки bol-van/zapret (пакет
- * "zapret-discord-youtube", general*.bat) и адаптированы под наш движок:
- *  - {BIN}   заменяется на путь к папке engine/vendor/zapret/bin (со слэшем)
- *  - {LISTS} заменяется на путь к папке engine/vendor/zapret/lists (со слэшем),
- *            где list-general-user.txt / list-exclude-user.txt — это файлы,
- *            которые rebuildHostlist() перезаписывает пользовательскими
- *            доменами (custom + домены приложений), см. zapret-manager.js.
- *
- * Секции с игровым фильтром (%GameFilterTCP%/%GameFilterUDP%) из оригинальных
- * .bat-файлов не переносились — в этом приложении нет отдельного игрового
- * фильтра, а пустой список портов ломает winws.exe.
+ * args — массив аргументов командной строки winws.exe (без экранирования
+ * shell, передаётся напрямую в child_process.spawn).
+ * {LISTS} заменяется на путь к объединённому hostlist-файлу перед запуском.
  */
 
-const WF_TCP = '80,443,2053,2083,2087,2096,8443';
-const WF_UDP = '443,19294-19344,50000-50100';
-
-const GENERAL_HOSTLISTS =
-  '--hostlist={LISTS}list-general.txt --hostlist={LISTS}list-general-user.txt ' +
-  '--hostlist-exclude={LISTS}list-exclude.txt --hostlist-exclude={LISTS}list-exclude-user.txt ' +
-  '--ipset-exclude={LISTS}ipset-exclude.txt';
-
-function args(str) {
-  // Разбиваем по пробелам/переносам строк, храня {BIN}/{LISTS} как часть токена
-  return str.trim().split(/\s+/);
-}
+const BASE_TCP_PORTS = '80,443,2053,2083,2087,2096,8443';
+const BASE_UDP_PORTS = '443,50000-50100';
 
 const STRATEGIES = [
   {
-    id: 'general',
-    name: 'General (базовая)',
-    description:
-      'Официальная базовая стратегия zapret: fake+multisplit по SNI, фейковые QUIC/STUN-пакеты для Discord. Хорошая отправная точка для большинства провайдеров.',
-    args: args(`
-      --wf-tcp=${WF_TCP} --wf-udp=${WF_UDP}
-      --filter-udp=443 ${GENERAL_HOSTLISTS} --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic={BIN}quic_initial_www_google_com.bin --new
-      --filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-fake-discord={BIN}ACTIVE_DISCORD_UDP.bin --dpi-desync-fake-stun={BIN}ACTIVE_DISCORD_UDP.bin --dpi-desync-repeats=6 --new
-      --filter-tcp=2053,2083,2087,2096,8443 --hostlist-domains=discord.media --dpi-desync=multisplit --dpi-desync-split-seqovl=681 --dpi-desync-split-pos=1 --dpi-desync-split-seqovl-pattern={BIN}tls_clienthello_www_google_com.bin --new
-      --filter-tcp=443 --hostlist={LISTS}list-google.txt --ip-id=zero --dpi-desync=multisplit --dpi-desync-split-seqovl=681 --dpi-desync-split-pos=1 --dpi-desync-split-seqovl-pattern={BIN}tls_clienthello_www_google_com.bin --new
-      --filter-tcp=80,443 ${GENERAL_HOSTLISTS} --dpi-desync=multisplit --dpi-desync-split-seqovl=568 --dpi-desync-split-pos=1 --dpi-desync-split-seqovl-pattern={BIN}tls_clienthello_4pda_to.bin --new
-      --filter-udp=443 --ipset={LISTS}ipset-all.txt --hostlist-exclude={LISTS}list-exclude.txt --hostlist-exclude={LISTS}list-exclude-user.txt --ipset-exclude={LISTS}ipset-exclude.txt --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic={BIN}quic_initial_www_google_com.bin --new
-      --filter-tcp=80,443,8443 --ipset={LISTS}ipset-all.txt --hostlist-exclude={LISTS}list-exclude.txt --hostlist-exclude={LISTS}list-exclude-user.txt --ipset-exclude={LISTS}ipset-exclude.txt --dpi-desync=multisplit --dpi-desync-split-seqovl=568 --dpi-desync-split-pos=1 --dpi-desync-split-seqovl-pattern={BIN}tls_clienthello_4pda_to.bin
-    `)
+    id: 'fake_split2',
+    name: 'Fake + Split (базовая)',
+    description: 'Лёгкая стратегия: разбиение TLS ClientHello и фейковый пакет перед ним. Хорошо работает против простых DPI по SNI.',
+    args: [
+      '--wf-tcp=' + BASE_TCP_PORTS,
+      '--wf-udp=' + BASE_UDP_PORTS,
+      '--filter-tcp=443',
+      '--hostlist={LISTS}',
+      '--dpi-desync=fake,split2',
+      '--dpi-desync-ttl=3',
+      '--dpi-desync-fooling=badseq',
+      '--dpi-desync-repeats=6',
+      '--new',
+      '--filter-tcp=80',
+      '--dpi-desync=fake,split2',
+      '--dpi-desync-fooling=datanoack'
+    ]
   },
   {
-    id: 'general_alt2',
-    name: 'General ALT2',
-    description:
-      'Вариант базовой стратегии с другим смещением split-seqovl (652/pos2) — помогает там, где ALT не проходит через DPI провайдера.',
-    args: args(`
-      --wf-tcp=${WF_TCP} --wf-udp=${WF_UDP}
-      --filter-udp=443 ${GENERAL_HOSTLISTS} --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic={BIN}quic_initial_www_google_com.bin --new
-      --filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-fake-discord={BIN}ACTIVE_DISCORD_UDP.bin --dpi-desync-fake-stun={BIN}ACTIVE_DISCORD_UDP.bin --dpi-desync-repeats=6 --new
-      --filter-tcp=2053,2083,2087,2096,8443 --hostlist-domains=discord.media --dpi-desync=multisplit --dpi-desync-split-seqovl=652 --dpi-desync-split-pos=2 --dpi-desync-split-seqovl-pattern={BIN}tls_clienthello_www_google_com.bin --new
-      --filter-tcp=443 --hostlist={LISTS}list-google.txt --ip-id=zero --dpi-desync=multisplit --dpi-desync-split-seqovl=652 --dpi-desync-split-pos=2 --dpi-desync-split-seqovl-pattern={BIN}tls_clienthello_www_google_com.bin --new
-      --filter-tcp=80,443 ${GENERAL_HOSTLISTS} --dpi-desync=multisplit --dpi-desync-split-seqovl=652 --dpi-desync-split-pos=2 --dpi-desync-split-seqovl-pattern={BIN}tls_clienthello_www_google_com.bin --new
-      --filter-udp=443 --ipset={LISTS}ipset-all.txt --hostlist-exclude={LISTS}list-exclude.txt --hostlist-exclude={LISTS}list-exclude-user.txt --ipset-exclude={LISTS}ipset-exclude.txt --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic={BIN}quic_initial_www_google_com.bin --new
-      --filter-tcp=80,443,8443 --ipset={LISTS}ipset-all.txt --hostlist-exclude={LISTS}list-exclude.txt --hostlist-exclude={LISTS}list-exclude-user.txt --ipset-exclude={LISTS}ipset-exclude.txt --dpi-desync=multisplit --dpi-desync-split-seqovl=652 --dpi-desync-split-pos=2 --dpi-desync-split-seqovl-pattern={BIN}tls_clienthello_www_google_com.bin
-    `)
+    id: 'multisplit',
+    name: 'Multisplit',
+    description: 'Сегментирует пакет в нескольких точках с перекрытием — хорошо держит более агрессивные ТСПУ-профили.',
+    args: [
+      '--wf-tcp=' + BASE_TCP_PORTS,
+      '--wf-udp=' + BASE_UDP_PORTS,
+      '--filter-tcp=443',
+      '--hostlist={LISTS}',
+      '--dpi-desync=multisplit',
+      '--dpi-desync-split-seqovl=1',
+      '--dpi-desync-split-seqovl-pattern=tls_clienthello_www_google_com',
+      '--dpi-desync-fooling=badseq'
+    ]
   },
   {
-    id: 'simple_fake',
-    name: 'Simple Fake',
-    description:
-      'Более лёгкая стратегия на основе одиночных фейковых пакетов (без multisplit) — меньше нагрузка на CPU, подходит как первая попытка на слабом оборудовании ТСПУ.',
-    args: args(`
-      --wf-tcp=${WF_TCP} --wf-udp=${WF_UDP}
-      --filter-udp=443 ${GENERAL_HOSTLISTS} --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic={BIN}quic_initial_www_google_com.bin --new
-      --filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-fake-discord={BIN}ACTIVE_DISCORD_UDP.bin --dpi-desync-fake-stun={BIN}ACTIVE_DISCORD_UDP.bin --dpi-desync-repeats=6 --new
-      --filter-tcp=2053,2083,2087,2096,8443 --hostlist-domains=discord.media --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fooling=ts --dpi-desync-fake-tls={BIN}tls_clienthello_www_google_com.bin --new
-      --filter-tcp=443 --hostlist={LISTS}list-google.txt --ip-id=zero --dpi-desync=hostfakesplit --dpi-desync-fooling=ts --dpi-desync-hostfakesplit-mod=host=www.google.com --new
-      --filter-tcp=80,443 ${GENERAL_HOSTLISTS} --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fooling=ts --dpi-desync-fake-tls={BIN}tls_clienthello_www_google_com.bin --dpi-desync-fake-http={BIN}tls_clienthello_max_ru.bin --new
-      --filter-udp=443 --ipset={LISTS}ipset-all.txt --hostlist-exclude={LISTS}list-exclude.txt --hostlist-exclude={LISTS}list-exclude-user.txt --ipset-exclude={LISTS}ipset-exclude.txt --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic={BIN}quic_initial_www_google_com.bin --new
-      --filter-tcp=80,443,8443 --ipset={LISTS}ipset-all.txt --hostlist-exclude={LISTS}list-exclude.txt --hostlist-exclude={LISTS}list-exclude-user.txt --ipset-exclude={LISTS}ipset-exclude.txt --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fooling=ts --dpi-desync-fake-tls={BIN}tls_clienthello_www_google_com.bin --dpi-desync-fake-http={BIN}tls_clienthello_max_ru.bin
-    `)
+    id: 'fake_multisplit',
+    name: 'Fake + Multisplit (усиленная)',
+    description: 'Комбинация фейкового пакета и множественной сегментации. Медленнее, но устойчивее к обновлениям ТСПУ.',
+    args: [
+      '--wf-tcp=' + BASE_TCP_PORTS,
+      '--wf-udp=' + BASE_UDP_PORTS,
+      '--filter-tcp=443',
+      '--hostlist={LISTS}',
+      '--dpi-desync=fake,multisplit',
+      '--dpi-desync-repeats=8',
+      '--dpi-desync-fooling=badseq,datanoack',
+      '--dpi-desync-fake-tls=default'
+    ]
+  },
+  {
+    id: 'disorder2',
+    name: 'Disorder2',
+    description: 'Отправляет сегменты не по порядку, сбивая сборку пакета на стороне DPI-анализатора.',
+    args: [
+      '--wf-tcp=' + BASE_TCP_PORTS,
+      '--wf-udp=' + BASE_UDP_PORTS,
+      '--filter-tcp=443',
+      '--hostlist={LISTS}',
+      '--dpi-desync=disorder2',
+      '--dpi-desync-ttl=4',
+      '--dpi-desync-repeats=6'
+    ]
   },
   {
     id: 'fake_tls_auto',
-    name: 'Fake TLS Auto + Multidisorder (усиленная)',
-    description:
-      'Самая агрессивная стратегия: multidisorder с поддельным TLS ClientHello (SNI www.google.com) и badseq-фулингом. Медленнее, но устойчивее к обновлениям ТСПУ.',
-    args: args(`
-      --wf-tcp=${WF_TCP} --wf-udp=${WF_UDP}
-      --filter-udp=443 ${GENERAL_HOSTLISTS} --dpi-desync=fake --dpi-desync-repeats=11 --dpi-desync-fake-quic={BIN}quic_initial_www_google_com.bin --new
-      --filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-fake-discord={BIN}ACTIVE_DISCORD_UDP.bin --dpi-desync-fake-stun={BIN}ACTIVE_DISCORD_UDP.bin --dpi-desync-repeats=6 --new
-      --filter-tcp=2053,2083,2087,2096,8443 --hostlist-domains=discord.media --dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,midsld --dpi-desync-repeats=11 --dpi-desync-fooling=badseq --dpi-desync-fake-tls=0x00000000 --dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com --new
-      --filter-tcp=443 --hostlist={LISTS}list-google.txt --ip-id=zero --dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,midsld --dpi-desync-repeats=11 --dpi-desync-fooling=badseq --dpi-desync-fake-tls=0x00000000 --dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com --new
-      --filter-tcp=80,443 ${GENERAL_HOSTLISTS} --dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,midsld --dpi-desync-repeats=11 --dpi-desync-fooling=badseq --dpi-desync-fake-tls=0x00000000 --dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com --dpi-desync-fake-http={BIN}tls_clienthello_max_ru.bin --new
-      --filter-udp=443 --ipset={LISTS}ipset-all.txt --hostlist-exclude={LISTS}list-exclude.txt --hostlist-exclude={LISTS}list-exclude-user.txt --ipset-exclude={LISTS}ipset-exclude.txt --dpi-desync=fake --dpi-desync-repeats=11 --dpi-desync-fake-quic={BIN}quic_initial_www_google_com.bin --new
-      --filter-tcp=80,443,8443 --ipset={LISTS}ipset-all.txt --hostlist-exclude={LISTS}list-exclude.txt --hostlist-exclude={LISTS}list-exclude-user.txt --ipset-exclude={LISTS}ipset-exclude.txt --dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,midsld --dpi-desync-repeats=11 --dpi-desync-fooling=badseq --dpi-desync-fake-tls=0x00000000 --dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com --dpi-desync-fake-http={BIN}tls_clienthello_max_ru.bin
-    `)
+    name: 'Fake TLS Auto + Autottl',
+    description: 'Автоматический подбор TTL для фейкового пакета — универсальный вариант «на всякий случай», если остальные не подошли.',
+    args: [
+      '--wf-tcp=' + BASE_TCP_PORTS,
+      '--wf-udp=' + BASE_UDP_PORTS,
+      '--filter-tcp=443',
+      '--hostlist={LISTS}',
+      '--dpi-desync=fake,split2',
+      '--dpi-desync-autottl=2',
+      '--dpi-desync-fooling=badseq',
+      '--dpi-desync-fake-tls=default',
+      '--dpi-desync-repeats=10'
+    ]
+  },
+  {
+    id: 'udp_quic',
+    name: 'UDP/QUIC (для Discord)',
+    description: 'Отдельная ветка для UDP/QUIC-трафика голосовых звонков Discord — фейковые UDP-пакеты перед реальными.',
+    args: [
+      '--wf-tcp=' + BASE_TCP_PORTS,
+      '--wf-udp=' + BASE_UDP_PORTS,
+      '--filter-udp=443',
+      '--hostlist={LISTS}',
+      '--dpi-desync=fake',
+      '--dpi-desync-repeats=6',
+      '--dpi-desync-fake-quic=default',
+      '--new',
+      '--filter-tcp=443',
+      '--hostlist={LISTS}',
+      '--dpi-desync=fake,split2',
+      '--dpi-desync-fooling=badseq'
+    ]
   }
 ];
 

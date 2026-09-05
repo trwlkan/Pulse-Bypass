@@ -46,31 +46,12 @@ class ZapretManager extends EventEmitter {
     this.strategyTestResults = this._loadStrategyResults();
   }
 
-  // engine/vendor/zapret/bin — сюда распакован официальный релиз
-  // (winws.exe, WinDivert*.dll/sys, cygwin1.dll, *.bin payload-файлы для фейков)
-  get binDir() {
-    return path.join(this.resourcesPath, 'bin');
-  }
-
   get binPath() {
-    return path.join(this.binDir, process.platform === 'win32' ? 'winws.exe' : 'winws');
+    return path.join(this.resourcesPath, process.platform === 'win32' ? 'winws.exe' : 'winws');
   }
 
-  // engine/vendor/zapret/lists — официальные списки (list-general.txt,
-  // list-google.txt, ipset-all.txt, ...), поставляемые вместе с релизом
-  get vendorListsDir() {
-    return path.join(this.resourcesPath, 'lists');
-  }
-
-  // Пользовательские файлы внутри vendorListsDir, которые официальные
-  // стратегии (см. strategies.js) сами подключают через --hostlist=/
-  // --hostlist-exclude= — именно их мы перезаписываем в rebuildHostlist().
-  get userHostlistPath() {
-    return path.join(this.vendorListsDir, 'list-general-user.txt');
-  }
-
-  get userExcludePath() {
-    return path.join(this.vendorListsDir, 'list-exclude-user.txt');
+  get hostlistPath() {
+    return path.join(this.runtimeDir, 'combined-hostlist.txt');
   }
 
   isEngineInstalled() {
@@ -99,18 +80,7 @@ class ZapretManager extends EventEmitter {
   }
 
   /**
-   * ИСПРАВЛЕНО: теперь правильно добавляет пользовательские домены.
-   *
-   * Встроенный zapret (bin+lists) уже содержит официальный list-general.txt
-   * (много доменов, включая YouTube/Google) и list-google.txt. Здесь мы
-   * дополнительно собираем:
-   *  - предустановленные списки этого приложения (engine/hostlists/*.txt,
-   *    переключаются тумблерами youtube/discord/general),
-   *  - пользовательские домены (config.domains.custom[]),
-   *  - домены приложений (config.apps[].domains[]),
-   * и пишем их в list-general-user.txt внутри engine/vendor/zapret/lists —
-   * официальные стратегии (strategies.js) сами подключают этот файл через
-   * --hostlist=, так что новые домены сразу работают с любой стратегией.
+   * ИСПРАВЛЕНО: теперь правильно добавляет пользовательские домены
    */
   rebuildHostlist(config) {
     const lines = [];
@@ -118,13 +88,13 @@ class ZapretManager extends EventEmitter {
 
     const add = (host) => {
       const h = String(host).trim().toLowerCase();
-      if (h && !h.startsWith('#') && !seen.has(h)) {
+      if (h && !seen.has(h)) {
         seen.add(h);
         lines.push(h);
       }
     };
 
-    // Встроенные списки (переключаемые тумблерами в UI)
+    // Встроенные списки
     if (config.domains && config.domains.youtube !== false) {
       const ytPath = path.join(this.listsPath, 'youtube.txt');
       if (fs.existsSync(ytPath)) {
@@ -164,18 +134,8 @@ class ZapretManager extends EventEmitter {
       });
     }
 
-    // winws.exe не любит пустые/отсутствующие hostlist-файлы — как и
-    // официальный service.bat, держим в файле хотя бы одну строку.
-    const content = lines.length
-      ? lines.join('\n')
-      : '# Pulse Bypass: пользовательские домены появятся здесь\ndomain.example.abc';
-
     try {
-      fs.mkdirSync(this.vendorListsDir, { recursive: true });
-      fs.writeFileSync(this.userHostlistPath, content, 'utf8');
-      if (!fs.existsSync(this.userExcludePath)) {
-        fs.writeFileSync(this.userExcludePath, 'domain.example.abc', 'utf8');
-      }
+      fs.writeFileSync(this.hostlistPath, lines.join('\n'), 'utf8');
       this._log(`Список доменов обновлён: ${lines.length} записей`);
     } catch (err) {
       this._log('Ошибка записи hostlist: ' + err.message);
@@ -197,7 +157,7 @@ class ZapretManager extends EventEmitter {
     const { fetchZapretBundle } = require('./vendor-fetch');
     this._log('Движок zapret не найден — загружаю официальный релиз bol-van/zapret-win-bundle...');
     try {
-      await fetchZapretBundle(this.binDir, (msg) => this._log(msg));
+      await fetchZapretBundle(this.resourcesPath, (msg) => this._log(msg));
       return this.isEngineInstalled();
     } catch (err) {
       this._log('Не удалось загрузить движок: ' + err.message);
@@ -249,20 +209,13 @@ class ZapretManager extends EventEmitter {
 
     this.rebuildHostlist(this.getStore());
 
-    if (!fs.existsSync(this.userHostlistPath)) {
+    if (!fs.existsSync(this.hostlistPath)) {
       throw new Error('Список доменов пуст — добавьте сайты для обхода');
     }
 
     await this.killAllInstances();
 
-    // {BIN} и {LISTS} — префиксы папок (с завершающим слэшем), а не пути к
-    // одному файлу: сами имена файлов уже прописаны в strategies.js, как и
-    // в официальных .bat-скриптах zapret (%BIN%..., %LISTS%...).
-    const binPrefix = this.binDir + path.sep;
-    const listsPrefix = this.vendorListsDir + path.sep;
-    const args = strategy.args.map((a) =>
-      a.replace(/{BIN}/g, binPrefix).replace(/{LISTS}/g, listsPrefix)
-    );
+    const args = strategy.args.map((a) => a.replace(/{LISTS}/g, this.hostlistPath));
 
     this._setStatus('starting');
     this._log(`Запуск стратегии "${strategy.name}"...`);
@@ -271,7 +224,7 @@ class ZapretManager extends EventEmitter {
     return new Promise((resolve, reject) => {
       try {
         this.proc = spawn(this.binPath, args, {
-          cwd: this.binDir,
+          cwd: this.resourcesPath,
           windowsHide: true,
           detached: false
         });

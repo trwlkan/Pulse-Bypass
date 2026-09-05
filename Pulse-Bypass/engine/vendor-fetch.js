@@ -1,15 +1,13 @@
 'use strict';
 
 /**
- * Резервный способ получить движок zapret, если он почему-то отсутствует в
- * engine/vendor/zapret/bin (обычный сценарий — эти файлы уже встроены в
- * приложение, см. INSTALL.md). Скачивает официальный бинарный бандл
- * (bol-van/zapret-win-bundle, репозиторий с готовыми winws.exe + драйвером
- * WinDivert для Windows) с GitHub Releases и раскладывает нужные файлы в
- * указанную папку (обычно engine/vendor/zapret/bin).
+ * Скачивает официальный бинарный бандл zapret (bol-van/zapret-win-bundle,
+ * репозиторий с готовыми winws.exe + драйвером WinDivert для Windows) с
+ * GitHub Releases и раскладывает нужные файлы в resourcesPath.
  *
- * Это НЕ покрывает lists/ и *.bin payload-файлы (fake QUIC/TLS ClientHello
- * и т.д.) — они поставляются вместе с приложением и не входят в этот бандл.
+ * Мы намеренно НЕ храним сами бинарники в этом репозитории — они тянутся
+ * с официального источника на этапе сборки (см. .github/workflows/build.yml)
+ * либо при первом запуске приложения, если движок ещё не установлен.
  */
 
 const https = require('https');

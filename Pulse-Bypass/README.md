@@ -153,9 +153,7 @@ pulse-bypass-improved/
 │   ├── strategies.js      # Стратегии обхода
 │   ├── vendor-fetch.js    # Загрузка zapret
 │   ├── hostlists/         # Предустановленные списки доменов
-│   └── vendor/zapret/     # Встроенный движок zapret 1.10.2
-│       ├── bin/           # winws.exe, WinDivert, *.bin (fake-пакеты)
-│       └── lists/         # официальные hostlist/ipset + list-*-user.txt
+│   └── vendor/zapret/     # Бинарники zapret (загружаются автоматически)
 ├── src/
 │   ├── index.html         # UI (ОБНОВЛЁН)
 │   └── assets/

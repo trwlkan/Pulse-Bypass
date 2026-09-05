@@ -166,27 +166,45 @@ ipcMain.handle('engine:autoDetect', async (_e, targets) => {
   return result;
 });
 
-ipcMain.handle('config:update', (_e, patch) => {
+/** Перестраивает hostlist из текущего конфига и, если движок уже запущен,
+ *  перезапускает winws.exe с той же стратегией, чтобы изменения (сайты,
+ *  переключатели YouTube/Discord/общий список) применились немедленно —
+ *  сам winws.exe читает --hostlist только при старте и не подхватывает
+ *  изменения файла "на лету". */
+async function applyDomainsChange() {
+  zapret.rebuildHostlist(store.store);
+  if (zapret.isRunning()) {
+    const id = store.get('lastStrategyId') || zapret.currentStrategyId;
+    if (id) {
+      try { await zapret.start(id); } catch (e) { /* лог уже пишет zapret._log */ }
+    }
+  }
+}
+
+ipcMain.handle('config:update', async (_e, patch) => {
   store.set(patch);
   if (Object.prototype.hasOwnProperty.call(patch, 'launchOnBoot')) {
     try { app.setLoginItemSettings({ openAtLogin: !!patch.launchOnBoot }); } catch (e) {}
   }
+  if (Object.prototype.hasOwnProperty.call(patch, 'domains')) {
+    await applyDomainsChange();
+  }
   return store.store;
 });
 
-ipcMain.handle('config:addDomain', (_e, host) => {
+ipcMain.handle('config:addDomain', async (_e, host) => {
   const list = store.get('domains.custom', []);
   const id = 'd_' + Date.now().toString(36);
   list.push({ id, host: String(host).trim().toLowerCase(), enabled: true });
   store.set('domains.custom', list);
-  zapret.rebuildHostlist(store.store);
+  await applyDomainsChange();
   return list;
 });
 
-ipcMain.handle('config:removeDomain', (_e, id) => {
+ipcMain.handle('config:removeDomain', async (_e, id) => {
   const list = store.get('domains.custom', []).filter((d) => d.id !== id);
   store.set('domains.custom', list);
-  zapret.rebuildHostlist(store.store);
+  await applyDomainsChange();
   return list;
 });
 

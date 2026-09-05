@@ -1,0 +1,933 @@
+/* ==========================================================================
+   Pulse-hub — магазин приложений SpeedPulse.
+   Стилистика полностью повторяет сайт speedXpulse-site: тёмный терминальный
+   грин, шрифты Space Grotesk / IBM Plex Mono, тот же набор CSS-переменных
+   и тот же составной фон (сетка + точки + диагональный градиент).
+   ========================================================================== */
+
+:root{
+  --bg: #0A1210;
+  --panel: #0F1B18;
+  --panel-raised: #12211D;
+  --grid: #1E332C;
+  --text: #E9F3EE;
+  --text-dim: #7FA093;
+  --text-faint: #4A6058;
+  --dl: #5CFFB2;
+  --ul: #FFB454;
+  --ping-c: #6FD8FF;
+  --err: #FF6B6B;
+
+  --safe-red: #FF5A5A;
+  --safe-yellow: #FFC24B;
+  --safe-green: #5CFFB2;
+}
+
+*{ box-sizing:border-box; margin:0; padding:0; }
+*{ scrollbar-width:none; -ms-overflow-style:none; }
+*{ user-select:none; -webkit-user-select:none; }
+*::-webkit-scrollbar{ width:0; height:0; background:transparent; }
+
+html,body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'IBM Plex Mono', monospace;
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* ---- ТОТ ЖЕ ЗАДНИЙ ФОН, ЧТО И НА САЙТЕ ---- */
+/* плавное появление экрана целиком при открытии окна/переходе на новую страницу */
+@keyframes pulsehub-screen-in{
+  from{ opacity:0; margin-top:6px; }
+  to{ opacity:1; margin-top:0; }
+}
+
+body{
+  padding:36px 0 0;                     /* место под собственный титлбар */
+  position:relative;
+  /* ВАЖНО: анимация появления экрана намеренно НЕ использует transform.
+     Любой transform на <body> (даже translateY(0) в конечном кадре
+     анимации с fill-mode "both") создаёт для body новый containing
+     block для position:fixed-потомков — из-за этого все модалки,
+     бэкдропы и toast, использующие position:fixed, вместо реального
+     окна браузера центрировались/позиционировались относительно
+     высоты всей страницы (body), и на длинных страницах оказывались
+     сильно смещены вниз и обрезаны снизу экрана. margin-top даёт тот
+     же визуальный эффект «наплыва» без этого побочного эффекта. */
+  animation:pulsehub-screen-in 0.32s cubic-bezier(0.2,0.7,0.3,1) both;
+  background-color:#050b09;
+  background-image:
+    radial-gradient(ellipse 900px 500px at 8% -5%, rgba(92,255,178,0.07), transparent 60%),
+    linear-gradient(135deg, rgba(15,58,49,0.4) 0%, rgba(8,22,19,0.22) 22%, rgba(3,8,7,0.8) 48%, #010302 100%),
+    repeating-linear-gradient(0deg, rgba(140,255,205,0.028) 0px, rgba(140,255,205,0.028) 1px, transparent 1px, transparent 46px),
+    repeating-linear-gradient(90deg, rgba(140,255,205,0.028) 0px, rgba(140,255,205,0.028) 1px, transparent 1px, transparent 46px),
+    radial-gradient(circle, rgba(180,255,220,0.07) 1px, transparent 1.4px);
+  background-size:auto, auto, auto, auto, 46px 46px;
+  background-attachment:fixed;
+  background-repeat:no-repeat, no-repeat, repeat, repeat, repeat;
+}
+body::before, body::after{
+  content:''; position:fixed; width:340px; height:280px;
+  pointer-events:none; z-index:0; opacity:0.7; background-repeat:no-repeat;
+}
+body::before{
+  top:36px; right:0;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='280'%3E%3Cg stroke='%235cffb2' stroke-width='0.6' opacity='0.35'%3E%3Cline x1='0' y1='120' x2='90' y2='55'/%3E%3Cline x1='90' y1='55' x2='170' y2='75'/%3E%3Cline x1='0' y1='170' x2='60' y2='150'/%3E%3C/g%3E%3Cg fill='%23bfffdf' opacity='0.55'%3E%3Ccircle cx='0' cy='120' r='1.6'/%3E%3Ccircle cx='90' cy='55' r='1.6'/%3E%3Ccircle cx='170' cy='75' r='1.4'/%3E%3Ccircle cx='60' cy='150' r='1.4'/%3E%3Ccircle cx='0' cy='170' r='1.4'/%3E%3Ccircle cx='140' cy='20' r='1.2'/%3E%3Ccircle cx='230' cy='40' r='1.2'/%3E%3Ccircle cx='260' cy='90' r='1.4'/%3E%3Ccircle cx='300' cy='60' r='1.2'/%3E%3C/g%3E%3C/svg%3E");
+}
+body::after{
+  bottom:0; left:0;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='280'%3E%3Cg fill='%23bfffdf' opacity='0.5'%3E%3Ccircle cx='18' cy='260' r='1.3'/%3E%3Ccircle cx='42' cy='262' r='1.1'/%3E%3Ccircle cx='70' cy='258' r='1.3'/%3E%3Ccircle cx='100' cy='263' r='1.1'/%3E%3Ccircle cx='130' cy='259' r='1.3'/%3E%3Ccircle cx='160' cy='262' r='1.1'/%3E%3Ccircle cx='190' cy='258' r='1.3'/%3E%3Ccircle cx='60' cy='230' r='1.2'/%3E%3Ccircle cx='95' cy='225' r='1.2'/%3E%3Ccircle cx='20' cy='210' r='1.2'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* ================= титлбар (как в приложении SpeedPulse) ================= */
+.titlebar{
+  position:fixed; top:0; left:0; right:0; height:36px;
+  display:flex; align-items:stretch; justify-content:space-between;
+  background:var(--panel); border-bottom:1px solid var(--grid);
+  z-index:200; -webkit-app-region:drag; user-select:none;
+}
+.titlebar-left{ display:flex; align-items:center; gap:8px; padding:0 12px; }
+.titlebar-dot{ width:7px; height:7px; border-radius:50%; background:var(--dl); box-shadow:0 0 6px var(--dl); flex-shrink:0; }
+.titlebar-title{ font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.1em; color:var(--text-dim); }
+.titlebar-controls{ display:flex; align-items:center; -webkit-app-region:no-drag; }
+.tb-sep{ width:1px; height:18px; background:var(--grid); margin:0 6px; flex-shrink:0; }
+.tb-btn{
+  width:44px; height:36px; border:none; background:transparent; color:var(--text-dim);
+  cursor:pointer; display:flex; align-items:center; justify-content:center;
+  transition:background 0.12s ease, color 0.12s ease;
+}
+.tb-btn:hover{ background:rgba(255,255,255,0.06); color:var(--text); }
+.tb-btn.tb-close:hover{ background:#E81123; color:#fff; }
+.tb-btn svg{ width:10px; height:10px; }
+
+/* ---- аватар аккаунта в титлбаре, слева от кнопки-меню ---- */
+.tb-avatar{
+  width:26px; height:26px; border-radius:50%; flex-shrink:0; margin-left:10px;
+  border:1px solid var(--dl); cursor:pointer; padding:0;
+  background:radial-gradient(circle at 35% 30%, rgba(92,255,178,0.3), rgba(92,255,178,0.07) 70%);
+  color:var(--dl); display:flex; align-items:center; justify-content:center;
+  font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:11px; text-transform:uppercase;
+  transition:box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.tb-avatar:hover{ box-shadow:0 0 10px rgba(92,255,178,0.35); }
+
+/* ---- кнопка «обновление» в титлбаре, рядом с кнопкой-меню (☰) ---- */
+.tb-update-btn{
+  display:flex; align-items:center; gap:6px; height:26px; padding:0 10px; margin-right:8px;
+  border:1px solid var(--dl); border-radius:13px; background:rgba(92,255,178,0.08);
+  color:var(--dl); font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:0.03em;
+  cursor:pointer; transition:background 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+.tb-update-btn:hover{ background:rgba(92,255,178,0.16); box-shadow:0 0 10px rgba(92,255,178,0.25); }
+.tb-update-btn:disabled{ cursor:default; opacity:0.75; }
+.tb-update-dot{
+  width:6px; height:6px; border-radius:50%; background:var(--dl); box-shadow:0 0 6px var(--dl);
+  flex-shrink:0; animation:tb-update-pulse 1.6s ease-in-out infinite;
+}
+@keyframes tb-update-pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.35; } }
+html[data-theme="black"] .tb-update-btn{ border-color:#fff; color:#fff; background:rgba(255,255,255,0.06); }
+html[data-theme="black"] .tb-update-btn:hover{ background:rgba(255,255,255,0.12); box-shadow:0 0 10px rgba(255,255,255,0.2); }
+html[data-theme="black"] .tb-update-dot{ background:#fff; box-shadow:0 0 6px #fff; }
+
+/* ================= каркас страницы ================= */
+.hub{
+  position:relative; z-index:1;
+  max-width:1000px; margin:0 auto; padding:0 22px 60px;
+  min-height:calc(100vh - 36px); /* на весь экран под титлбаром */
+}
+
+/* ---- полноэкранный центрированный экран поиска (как в референсе) ---- */
+.hub-hero{
+  min-height:calc(100vh - 36px - 60px);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:30px; text-align:center; padding:40px 0 20px;
+}
+.hub-brand{ min-width:0; max-width:640px; }
+.hub-eyebrow{
+  display:flex; align-items:center; justify-content:center; gap:7px;
+  font-size:10.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--text-faint);
+  margin-bottom:14px;
+}
+.hub-eyebrow .dot{
+  width:6px; height:6px; border-radius:50%; background:var(--dl);
+  box-shadow:0 0 8px var(--dl); animation:hub-pulse 2.4s ease-in-out infinite;
+}
+@keyframes hub-pulse{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+.hub-title{
+  font-family:'Space Grotesk', sans-serif; font-weight:700;
+  font-size:clamp(26px, 4vw, 40px); letter-spacing:-0.01em; color:var(--text); line-height:1.15;
+}
+.hub-title span{ color:var(--dl); }
+.hub-sub{ font-size:11.5px; color:var(--text-faint); letter-spacing:0.06em; margin-top:10px; }
+
+/* ---- три полоски: теперь внутри титлбара, не перекрывается drag-зоной окна ---- */
+.tb-burger-wrap{ position:relative; height:36px; display:flex; align-items:center; }
+#burgerBtn{
+  width:30px; height:30px; padding:0; margin-left:8px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+  background:transparent; border:1px solid var(--grid); border-radius:4px; cursor:pointer;
+  transition:border-color 0.15s ease, background 0.15s ease;
+}
+#burgerBtn span{
+  display:block; width:14px; height:1.6px; border-radius:2px; background:var(--text-dim);
+  transition:background 0.15s ease, transform 0.2s ease, opacity 0.2s ease;
+}
+#burgerBtn:hover{ border-color:var(--dl); }
+#burgerBtn:hover span{ background:var(--text); }
+#burgerBtn.open{ border-color:var(--dl); background:rgba(92,255,178,0.06); }
+#burgerBtn.open span{ background:var(--dl); }
+#burgerBtn.open span:nth-child(1){ transform:translateY(5.6px) rotate(45deg); }
+#burgerBtn.open span:nth-child(2){ opacity:0; }
+#burgerBtn.open span:nth-child(3){ transform:translateY(-5.6px) rotate(-45deg); }
+
+/* ---- мини-окно из бургера ---- */
+.burger-menu{
+  position:fixed; top:44px; right:12px; width:236px;
+  background:linear-gradient(160deg, var(--panel-raised) 0%, var(--panel) 60%);
+  border:1px solid var(--grid); border-radius:8px;
+  box-shadow:0 20px 50px rgba(0,0,0,0.55), inset 0 1px 0 rgba(92,255,178,0.06);
+  padding:6px; z-index:260;
+  opacity:0; transform:translateY(-6px); pointer-events:none;
+  transition:opacity 0.14s ease, transform 0.14s ease;
+}
+.burger-menu.open{ opacity:1; transform:translateY(0); pointer-events:auto; }
+.burger-menu-head{
+  padding:9px 10px 10px; border-bottom:1px solid var(--grid); margin-bottom:6px;
+}
+.burger-menu-nick{ font-size:12px; color:var(--text); font-weight:500; }
+.burger-menu-mail{ font-size:10.5px; color:var(--text-faint); margin-top:3px; word-break:break-all; }
+.burger-item{
+  width:100%; display:flex; align-items:center; gap:10px;
+  background:transparent; border:none; border-radius:5px;
+  padding:10px; cursor:pointer; text-align:left;
+  font-family:'IBM Plex Mono', monospace; font-size:11.5px; letter-spacing:0.04em;
+  color:var(--text-dim); transition:background 0.12s ease, color 0.12s ease;
+}
+.burger-item:hover{ background:rgba(92,255,178,0.07); color:var(--text); }
+.burger-item svg{ width:14px; height:14px; flex-shrink:0; }
+.burger-item.danger{ color:var(--err); }
+.burger-item.danger:hover{ background:rgba(255,107,107,0.1); color:#ff9a9a; }
+.burger-item .soon{
+  margin-left:auto; font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase;
+  color:var(--ul); border:1px solid rgba(255,180,84,0.4); border-radius:3px; padding:2px 5px;
+}
+
+/* ---- компактный выбор темы прямо в бургер-меню (каталог/редактор) ----
+   те же 3 свотча, что и в настройках на главном экране, но без перехода
+   на index.html — тема меняется мгновенно и текущий экран/проект не теряется. */
+.burger-menu-sep{ height:1px; background:var(--grid); margin:6px 4px; }
+.burger-theme-row{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 10px 10px; gap:10px;
+}
+.burger-theme-label{
+  font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-faint);
+}
+.theme-swatches-compact{ gap:6px; margin-top:0; }
+.theme-swatches-compact .theme-swatch{
+  flex-direction:row; min-width:0; padding:4px; border-radius:6px;
+}
+.theme-swatches-compact .swatch-preview{ width:18px; height:18px; border-radius:4px; }
+.theme-swatches-compact .swatch-label{ display:none; }
+
+/* ================= поисковик ================= */
+.search-wrap{ position:relative; width:100%; max-width:640px; margin:0 auto; }
+.search-bar{
+  display:flex; align-items:center; gap:12px;
+  background:var(--panel); border:1px solid var(--grid); border-radius:16px;
+  padding:0 10px 0 20px; height:60px;
+  box-shadow:0 24px 60px rgba(0,0,0,0.45);
+  transition:border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.search-bar:focus-within{ border-color:var(--dl); box-shadow:0 0 0 3px rgba(92,255,178,0.1), 0 24px 60px rgba(0,0,0,0.45); }
+.search-bar > svg.search-ico{ width:19px; height:19px; color:var(--text-faint); flex-shrink:0; }
+#searchInput{
+  flex:1; min-width:0; height:100%;
+  background:transparent; border:none; outline:none;
+  font-family:'IBM Plex Mono', monospace; font-size:14.5px; color:var(--text);
+  user-select:text; -webkit-user-select:text;
+}
+#searchInput::placeholder{ color:var(--text-faint); }
+#searchClear{
+  background:transparent; border:none; color:var(--text-faint); cursor:pointer;
+  font-size:14px; padding:6px; display:none;
+}
+#searchClear:hover{ color:var(--text); }
+/* иконка настроек внутри поисковика */
+#searchSettingsBtn{
+  width:34px; height:34px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  background:transparent; border:1px solid transparent; border-radius:6px;
+  color:var(--text-dim); cursor:pointer;
+  transition:border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+#searchSettingsBtn:hover{ color:var(--text); border-color:var(--grid); }
+#searchSettingsBtn.open{ color:var(--dl); border-color:var(--dl); background:rgba(92,255,178,0.06); }
+#searchSettingsBtn svg{ width:16px; height:16px; }
+
+/* ---- окно параметров поиска ---- */
+.search-panel{
+  position:absolute; top:calc(100% + 10px); left:50%; transform:translateX(-50%) translateY(-6px);
+  width:min(420px, 100%); text-align:left;
+  background:linear-gradient(160deg, var(--panel-raised) 0%, var(--panel) 60%);
+  border:1px solid var(--grid); border-radius:10px;
+  box-shadow:0 24px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(92,255,178,0.06);
+  padding:16px; z-index:110;
+  opacity:0; pointer-events:none;
+  transition:opacity 0.15s ease, transform 0.15s ease;
+}
+.search-panel.open{ opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+.sp-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.sp-title{
+  font-size:10.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--text-dim);
+  display:flex; align-items:center; gap:8px;
+}
+.sp-title::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--dl); box-shadow:0 0 8px var(--dl); }
+.sp-close{ background:none; border:none; color:var(--text-faint); font-size:13px; cursor:pointer; }
+.sp-close:hover{ color:var(--text); }
+.sp-section + .sp-section{ margin-top:16px; padding-top:16px; border-top:1px solid var(--grid); }
+.sp-label{ font-size:10.5px; letter-spacing:0.12em; text-transform:uppercase; color:var(--text-faint); margin-bottom:10px; }
+
+.sp-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+.sp-chip{
+  font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.04em;
+  background:transparent; color:var(--text-dim);
+  border:1px solid var(--grid); border-radius:4px; padding:7px 11px; cursor:pointer;
+  transition:border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.sp-chip:hover{ border-color:var(--text-dim); color:var(--text); }
+.sp-chip.active{ border-color:var(--dl); color:var(--dl); background:rgba(92,255,178,0.08); }
+
+.sp-row{ display:flex; align-items:center; gap:9px; font-size:11.5px; color:var(--text-dim); margin-top:10px; }
+.sp-row input[type=checkbox]{ accent-color:var(--dl); width:14px; height:14px; cursor:pointer; }
+
+/* ---- 3 кнопки безопасности с иконкой i.webp ---- */
+.safety-row{ display:flex; gap:10px; }
+.safety-btn{
+  position:relative; flex:1;
+  display:flex; align-items:center; justify-content:center;
+  height:44px; border-radius:8px; cursor:pointer;
+  background:rgba(255,255,255,0.02);
+  border:1px solid var(--grid);
+  transition:border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+.safety-btn:hover{ transform:translateY(-1px); }
+/* сама иконка — своя SVG-картинка для каждого уровня (круг+крестик / круг+! / круг+галочка) */
+.safety-btn .i-icon{
+  width:20px; height:20px; display:block;
+  transition:color 0.15s ease;
+}
+.safety-btn[data-level="red"]              { border-color:rgba(255,90,90,0.35);  }
+.safety-btn[data-level="red"] .i-icon      { color:var(--safe-red);    }
+.safety-btn[data-level="red"]:hover,
+.safety-btn[data-level="red"].active       { border-color:var(--safe-red);   background:rgba(255,90,90,0.12);  }
+
+.safety-btn[data-level="yellow"]           { border-color:rgba(255,194,75,0.35); }
+.safety-btn[data-level="yellow"] .i-icon   { color:var(--safe-yellow); }
+.safety-btn[data-level="yellow"]:hover,
+.safety-btn[data-level="yellow"].active    { border-color:var(--safe-yellow); background:rgba(255,194,75,0.12); }
+
+.safety-btn[data-level="green"]            { border-color:rgba(92,255,178,0.35); }
+.safety-btn[data-level="green"] .i-icon    { color:var(--safe-green);  }
+.safety-btn[data-level="green"]:hover,
+.safety-btn[data-level="green"].active     { border-color:var(--safe-green);  background:rgba(92,255,178,0.12);  }
+
+/* подпись при наведении */
+.safety-btn .tip{
+  position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%) translateY(4px);
+  background:var(--panel-raised); border:1px solid var(--grid); border-radius:5px;
+  padding:6px 9px; font-size:10.5px; letter-spacing:0.04em; color:var(--text);
+  white-space:nowrap; pointer-events:none; opacity:0; z-index:10;
+  box-shadow:0 8px 22px rgba(0,0,0,0.5);
+  transition:opacity 0.14s ease, transform 0.14s ease;
+}
+.safety-btn:hover .tip{ opacity:1; transform:translateX(-50%) translateY(0); }
+.safety-btn .tip::after{
+  content:''; position:absolute; top:100%; left:50%; margin-left:-4px;
+  border:4px solid transparent; border-top-color:var(--grid);
+}
+
+/* ================= переход в каталог (низ главного экрана) ================= */
+.catalog-cta{
+  min-height:calc(100vh - 36px - 60px);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:14px; text-align:center; padding:40px 0;
+}
+.catalog-open-btn{
+  display:flex; align-items:center; gap:10px;
+  font-family:'IBM Plex Mono', monospace; font-size:12.5px; letter-spacing:0.08em;
+  background:rgba(92,255,178,0.1); color:var(--dl);
+  border:1px solid rgba(92,255,178,0.4); border-radius:8px;
+  padding:15px 28px; cursor:pointer;
+  transition:background 0.15s ease, color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+}
+.catalog-open-btn svg{ width:18px; height:18px; flex-shrink:0; }
+.catalog-open-btn:hover{ background:var(--dl); color:#06120E; transform:translateY(-2px); box-shadow:0 14px 34px rgba(92,255,178,0.18); }
+.catalog-cta-note{ font-size:10.5px; color:var(--text-faint); letter-spacing:0.05em; max-width:360px; line-height:1.6; }
+
+/* ================= результаты поиска (общие классы, используются в каталоге) ================= */
+.results-head{
+  display:flex; align-items:baseline; justify-content:space-between;
+  margin:0 2px 12px; font-size:10.5px; letter-spacing:0.12em;
+  text-transform:uppercase; color:var(--text-faint);
+}
+.results-head b{ color:var(--dl); font-weight:500; }
+
+.app-list{ display:flex; flex-direction:column; gap:10px; }
+.app-card{
+  display:flex; align-items:center; gap:14px;
+  background:linear-gradient(160deg, rgba(18,33,29,0.92) 0%, rgba(15,27,24,0.92) 60%);
+  border:1px solid var(--grid); border-radius:10px; padding:14px 16px;
+  transition:border-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+}
+.app-card:hover{
+  border-color:rgba(92,255,178,0.35); transform:translateY(-1px);
+  box-shadow:0 12px 30px rgba(0,0,0,0.35);
+}
+.app-icon{
+  width:52px; height:52px; flex-shrink:0; border-radius:12px;
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:20px; color:#06120E;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.25);
+}
+.app-main{ flex:1; min-width:0; }
+.app-name-row{ display:flex; align-items:center; gap:8px; }
+.app-name{ font-family:'Space Grotesk', sans-serif; font-weight:600; font-size:15px; color:var(--text); }
+.app-badge{
+  width:15px; height:15px; flex-shrink:0;
+  -webkit-mask-image:url('assets/i.webp'); mask-image:url('assets/i.webp');
+  -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat;
+  -webkit-mask-position:center;  mask-position:center;
+  -webkit-mask-size:contain;     mask-size:contain;
+  cursor:help;
+}
+.app-badge[data-level="red"]   { background-color:var(--safe-red);   }
+.app-badge[data-level="yellow"]{ background-color:var(--safe-yellow);}
+.app-badge[data-level="green"] { background-color:var(--safe-green); }
+.app-desc{ font-size:11.5px; color:var(--text-dim); margin-top:4px; line-height:1.5; }
+.app-meta{ display:flex; flex-wrap:wrap; gap:12px; margin-top:7px; font-size:10.5px; color:var(--text-faint); letter-spacing:0.05em; }
+.app-meta span{ display:flex; align-items:center; gap:4px; }
+.app-actions{ display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0; }
+.app-dl{
+  font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.08em;
+  background:rgba(92,255,178,0.1); color:var(--dl);
+  border:1px solid rgba(92,255,178,0.4); border-radius:5px;
+  padding:9px 16px; cursor:pointer; white-space:nowrap;
+  transition:background 0.15s ease, color 0.15s ease;
+}
+.app-dl:hover{ background:var(--dl); color:#06120E; }
+.app-dl.busy{ opacity:0.7; cursor:progress; }
+.app-dl.done{ background:var(--dl); color:#06120E; border-color:var(--dl); cursor:default; }
+.app-size{ font-size:10px; color:var(--text-faint); }
+
+.empty{
+  text-align:center; padding:56px 20px; color:var(--text-faint);
+  font-size:12px; letter-spacing:0.06em;
+}
+.empty b{ color:var(--text-dim); font-weight:500; }
+
+/* ================= модалка «настройки» (как на сайте) ================= */
+/* «устройства» открываются поверх «настроек», поэтому у них z-index выше,
+   чем у общего .hub-backdrop (иначе, при равном z-index, побеждает порядок
+   в DOM, и окно устройств оказывалось позади окна настроек) */
+#devicesBackdrop{ z-index:310; }
+
+.hub-backdrop{
+  position:fixed; inset:0; background:rgba(3,8,7,0.72); backdrop-filter:blur(3px);
+  display:flex; align-items:center; justify-content:center; padding:24px;
+  z-index:300; opacity:0; pointer-events:none; transition:opacity 0.18s ease;
+}
+.hub-backdrop.open{ opacity:1; pointer-events:auto; }
+.hub-modal{
+  width:100%; max-width:420px; max-height:82vh; overflow-y:auto;
+  background:linear-gradient(160deg, var(--panel-raised) 0%, var(--panel) 55%);
+  border:1px solid var(--grid); border-radius:12px; padding:20px;
+  box-shadow:0 24px 70px rgba(0,0,0,0.6), inset 0 1px 0 rgba(92,255,178,0.06);
+  transform:translateY(8px) scale(0.99); transition:transform 0.18s ease;
+}
+.hub-backdrop.open .hub-modal{ transform:translateY(0) scale(1); }
+.hub-modal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+.hub-modal-title{
+  font-size:10.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--text-dim);
+  display:flex; align-items:center; gap:8px;
+}
+.hub-modal-title::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--dl); box-shadow:0 0 8px var(--dl); }
+.hub-modal-close{ background:none; border:none; color:var(--text-faint); font-size:14px; cursor:pointer; }
+.hub-modal-close:hover{ color:var(--text); }
+.hub-sect + .hub-sect{ margin-top:16px; padding-top:16px; border-top:1px solid var(--grid); }
+.hub-sect-label{ font-size:10.5px; letter-spacing:0.12em; text-transform:uppercase; color:var(--text-faint); margin-bottom:10px; }
+.hub-note{ font-size:10.5px; color:var(--text-faint); line-height:1.55; margin-top:8px; }
+.hub-msg{ font-size:11.5px; color:var(--dl); min-height:15px; margin-top:8px; }
+.hub-msg.err{ color:var(--err); }
+.hub-msg.ok{ color:var(--dl); }
+.ghost-btn{
+  font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.06em;
+  background:transparent; color:var(--text-dim);
+  border:1px solid var(--grid); border-radius:5px; padding:9px 14px; cursor:pointer;
+  transition:border-color 0.15s ease, color 0.15s ease;
+}
+.ghost-btn:hover{ border-color:var(--dl); color:var(--text); }
+.ghost-btn.danger{ color:var(--err); border-color:rgba(255,107,107,0.35); }
+.ghost-btn.danger:hover{ border-color:var(--err); color:#ff9a9a; }
+.ghost-btn:disabled{ opacity:0.6; cursor:default; }
+
+/* ================= форма входа / регистрации ================= */
+.hub-field{ margin-bottom:12px; }
+.hub-field label{
+  display:block; font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase;
+  color:var(--text-faint); margin-bottom:6px;
+}
+.hub-field input{
+  width:100%; background:var(--bg); border:1px solid var(--grid); border-radius:5px;
+  padding:9px 10px; font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--text);
+  outline:none; box-sizing:border-box; user-select:text; -webkit-user-select:text;
+}
+.hub-field input:focus{ border-color:var(--dl); }
+.auth-row{ display:flex; justify-content:flex-end; margin-bottom:8px; }
+.auth-link{
+  background:none; border:none; padding:0; cursor:pointer;
+  font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--text-dim);
+  text-decoration:underline; text-underline-offset:2px;
+}
+.auth-link:hover{ color:var(--dl); }
+.auth-switch{
+  margin-top:14px; text-align:center; font-size:11px; color:var(--text-faint);
+}
+.app-dl:disabled{ opacity:0.6; cursor:default; }
+
+/* ---- выбор устройства в модалке «создать проект» ---- */
+.device-row{ display:flex; gap:8px; }
+.device-btn{
+  position:relative; flex:1; display:flex; flex-direction:column; align-items:center; gap:6px;
+  background:rgba(255,255,255,0.02); border:1px solid var(--grid); border-radius:8px;
+  padding:12px 6px 10px; cursor:pointer; color:var(--text-dim);
+  font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:0.03em;
+  transition:border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+.device-btn svg{ width:20px; height:20px; }
+.device-btn:hover:not(:disabled){ transform:translateY(-1px); border-color:var(--text-dim); color:var(--text); }
+.device-btn.active{ border-color:var(--dl); background:rgba(92,255,178,0.1); color:var(--dl); }
+.device-btn:disabled{ cursor:not-allowed; opacity:0.45; }
+.device-btn .soon{
+  position:absolute; top:-7px; right:-6px;
+  font-size:8.5px; letter-spacing:0.08em; text-transform:uppercase;
+  color:var(--ul); border:1px solid rgba(255,180,84,0.4); border-radius:3px;
+  padding:2px 4px; background:var(--panel-raised);
+}
+
+/* ---- тост «скоро» ---- */
+.toast{
+  position:fixed; left:50%; bottom:34px; transform:translateX(-50%) translateY(14px);
+  background:var(--panel-raised); border:1px solid var(--grid); border-radius:8px;
+  padding:12px 18px; font-size:12px; color:var(--text); letter-spacing:0.05em;
+  box-shadow:0 18px 44px rgba(0,0,0,0.55);
+  opacity:0; pointer-events:none; z-index:400;
+  transition:opacity 0.2s ease, transform 0.2s ease;
+}
+.toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+.toast b{ color:var(--ul); font-weight:600; }
+
+@media (max-width:620px){
+  .hub{ padding:20px 14px 40px; }
+  .hub-title{ font-size:24px; }
+  .app-card{ flex-wrap:wrap; }
+  .app-actions{ flex-direction:row; width:100%; justify-content:flex-end; align-items:center; }
+}
+
+/* ================= экран «профиль» (весь экран, поверх остального приложения) ================= */
+.profile-screen{
+  position:fixed; inset:0; top:36px; z-index:500;
+  background:var(--bg); overflow-y:auto;
+  padding:28px 34px 40px;
+  opacity:0; transform:translateY(10px) scale(0.99);
+  pointer-events:none;
+  transition:opacity 0.2s cubic-bezier(0.2,0.7,0.3,1), transform 0.22s cubic-bezier(0.2,0.7,0.3,1);
+}
+.profile-screen.open{ opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+html[data-theme="white"] .profile-screen{ background:var(--bg); }
+
+.profile-screen-close{
+  position:absolute; top:20px; right:26px;
+  width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background:transparent; border:1px solid var(--grid); color:var(--text-dim); cursor:pointer;
+  transition:border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.profile-screen-close:hover{ border-color:var(--dl); color:var(--text); transform:rotate(90deg); }
+.profile-screen-close svg{ width:16px; height:16px; }
+
+.profile-screen-head{ display:flex; align-items:center; gap:16px; margin:6px 60px 18px 0; }
+.profile-avatar{
+  /* раньше 92px — визуально «гигантская» кнопка/аватар на фоне остального
+     компактного интерфейса; уменьшаем до размера, сомасштабного остальным
+     элементам шапки профиля */
+  position:relative; width:56px; height:56px; border-radius:50%; flex-shrink:0;
+  border:2px solid var(--dl);
+  background:radial-gradient(circle at 35% 30%, rgba(92,255,178,0.3), rgba(92,255,178,0.07) 70%);
+  color:var(--dl); display:flex; align-items:center; justify-content:center;
+  font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:22px; text-transform:uppercase;
+  box-shadow:0 0 16px rgba(92,255,178,0.2);
+}
+.profile-namebox{
+  flex:1; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:12px;
+  background:var(--panel); border:1px solid var(--grid); border-radius:10px;
+  padding:16px 18px;
+}
+.profile-namebox-name{
+  font-family:'Space Grotesk', sans-serif; font-weight:600; font-size:19px; color:var(--text);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.profile-namebox-at{
+  font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--text-faint);
+  flex-shrink:0;
+}
+
+.profile-screen-bar{
+  position:relative; display:flex; align-items:center; gap:10px;
+  background:rgba(255,255,255,0.02); border:1px solid var(--grid); border-radius:8px;
+  padding:0 8px 0 16px; height:44px; margin-bottom:24px;
+}
+.profile-screen-bar-label{
+  flex:1; font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-faint);
+}
+.profile-more-btn{
+  width:32px; height:32px; border-radius:6px; display:flex; align-items:center; justify-content:center;
+  background:transparent; border:1px solid transparent; color:var(--text-dim); cursor:pointer;
+  transition:border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.profile-more-btn:hover, .profile-more-btn.open{ border-color:var(--grid); background:rgba(92,255,178,0.06); color:var(--text); }
+.profile-more-btn svg{ width:18px; height:18px; }
+.profile-more-menu{
+  position:absolute; top:calc(100% + 8px); right:0; min-width:210px;
+  background:var(--panel-raised); border:1px solid var(--grid); border-radius:10px;
+  box-shadow:0 20px 50px rgba(0,0,0,0.5); padding:6px;
+  opacity:0; transform:translateY(6px) scale(0.98); pointer-events:none;
+  transition:opacity 0.15s ease, transform 0.15s ease; z-index:10;
+}
+.profile-more-menu.open{ opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+
+.profile-screen-body{ max-width:960px; }
+
+/* ---- профиль в два столбца: описание слева (с вертикальной линией-разделителем
+   справа от него), «что вы создали» — справа ---- */
+.profile-screen-grid{
+  display:grid; grid-template-columns:1fr 300px; align-items:start; gap:0;
+}
+.profile-desc-col{
+  padding-right:30px; margin-right:30px;
+  border-right:1px solid var(--grid); /* линия там, где описание */
+}
+.profile-desc-label{
+  font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-faint);
+  margin:6px 0 6px;
+}
+.profile-desc{
+  width:100%; min-height:76px; resize:vertical; box-sizing:border-box;
+  background:var(--bg); border:1px solid var(--grid); border-radius:8px;
+  padding:10px 12px; color:var(--text); font-family:'IBM Plex Mono', monospace; font-size:12px;
+  line-height:1.6; outline:none; transition:border-color 0.15s ease;
+}
+.profile-desc:focus{ border-color:var(--dl); }
+.profile-desc-count{ text-align:right; font-size:10px; color:var(--text-faint); margin-top:4px; }
+
+.profile-projects{ margin-top:30px; }
+.profile-projects-col{ margin-top:0; }
+.profile-projects-label{
+  font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-faint);
+  margin-bottom:10px;
+}
+.profile-projects-list{ display:flex; flex-direction:column; gap:8px; }
+
+@media (max-width:760px){
+  .profile-screen-grid{ grid-template-columns:1fr; }
+  .profile-desc-col{
+    border-right:none; padding-right:0; margin-right:0;
+    border-bottom:1px solid var(--grid); padding-bottom:20px; margin-bottom:20px;
+  }
+}
+.profile-projects-empty{
+  font-size:12px; color:var(--text-faint); border:1px dashed var(--grid); border-radius:8px;
+  padding:18px; text-align:center;
+}
+.profile-project-item{
+  display:flex; align-items:center; gap:10px; padding:10px 12px;
+  background:var(--panel); border:1px solid var(--grid); border-radius:8px;
+  font-size:12.5px; color:var(--text); transition:border-color 0.15s ease, transform 0.12s ease;
+}
+.profile-project-item:hover{ border-color:var(--dl); transform:translateY(-1px); }
+.profile-project-item .device-dot{ width:8px; height:8px; border-radius:50%; background:var(--dl); flex-shrink:0; }
+
+/* ================= вкладки в окне настроек ================= */
+.settings-tabs{
+  display:flex; gap:4px; border-bottom:1px solid var(--grid); margin-bottom:16px; padding-bottom:0;
+}
+.settings-tab-btn{
+  position:relative; background:transparent; border:none; cursor:pointer;
+  padding:9px 4px 11px; margin-right:14px;
+  font-family:'IBM Plex Mono', monospace; font-size:11.5px; letter-spacing:0.05em;
+  color:var(--text-faint); transition:color 0.15s ease;
+}
+.settings-tab-btn:hover{ color:var(--text-dim); }
+.settings-tab-btn.active{ color:var(--dl); }
+.settings-tab-btn.active::after{
+  content:''; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:var(--dl);
+  border-radius:2px 2px 0 0;
+}
+.support-unread-dot{
+  display:none; width:6px; height:6px; border-radius:50%; background:var(--ul);
+  margin-left:6px; vertical-align:middle;
+}
+.support-unread-dot.show{ display:inline-block; }
+
+/* ---- элементы аккордеона в аккаунте (email/пароль/2FA) ---- */
+.settings-item{ border-bottom:1px solid var(--grid); }
+.settings-item:last-child{ border-bottom:none; }
+.settings-item-head{
+  width:100%; display:flex; align-items:center; justify-content:space-between;
+  background:transparent; border:none; cursor:pointer; padding:13px 2px;
+  font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--text);
+  text-align:left;
+}
+.settings-item-head .chev{ font-size:9px; color:var(--text-faint); transition:transform 0.15s ease; }
+.settings-item.open .settings-item-head .chev{ transform:rotate(90deg); }
+.settings-item-body{ display:none; padding:2px 2px 16px; }
+.settings-item.open .settings-item-body{ display:block; }
+.settings-2fa-status{
+  font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-faint);
+  border:1px solid var(--grid); border-radius:3px; padding:2px 6px;
+}
+.settings-2fa-status.on{ color:var(--dl); border-color:rgba(92,255,178,0.4); }
+
+/* ================= вкладка «приложение» / панели общие ================= */
+.settings-tab-panel{ max-height:60vh; overflow-y:auto; }
+
+/* ---- окно настроек: фиксированный размер ----
+   раньше высота модалки (.hub-modal) была просто max-height + overflow:auto,
+   а значит подстраивалась под контент текущей вкладки/раскрытого аккордеона —
+   при переключении «аккаунт» -> «поддержка» -> «приложение», или при раскрытии
+   любого пункта аккордеона (email/пароль/2FA), модалка визуально «прыгала»,
+   расширяясь и сжимаясь. Делаем окно настроек фиксированного (и увеличенного)
+   размера: сама модалка больше не меняет высоту, скроллится только контент
+   внутри активной вкладки. */
+#settingsBackdrop .hub-modal{
+  display:flex; flex-direction:column;
+  width:100%; max-width:640px;
+  height:82vh; max-height:760px; min-height:520px;
+  overflow:hidden;
+}
+#settingsBackdrop .hub-modal-head{ flex:0 0 auto; }
+#settingsBackdrop .settings-tabs{ flex:0 0 auto; }
+#settingsBackdrop .settings-tab-panel{
+  flex:1 1 auto; min-height:0; max-height:none; overflow-y:auto;
+}
+
+/* ================= устройства (сессии) ================= */
+.device-item{
+  border:1px solid var(--grid); border-radius:7px; padding:11px 12px;
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+}
+.device-item.current{ border-color:rgba(92,255,178,0.4); }
+.device-item-main{ min-width:0; }
+.device-item-agent{
+  font-size:11px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.device-item-meta{ font-size:9.5px; color:var(--text-faint); margin-top:3px; }
+.device-item-badge{
+  font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:var(--dl);
+  border:1px solid rgba(92,255,178,0.35); border-radius:3px; padding:2px 6px; flex-shrink:0;
+}
+.device-item-del{
+  background:transparent; border:none; color:var(--text-faint); cursor:pointer;
+  padding:6px; flex-shrink:0; transition:color 0.15s ease;
+}
+.device-item-del:hover{ color:var(--err); }
+.device-item-del svg{ width:14px; height:14px; }
+
+/* ================= поддержка: лента сообщений ================= */
+.support-thread{
+  display:flex; flex-direction:column; gap:8px; max-height:260px; overflow-y:auto;
+  margin-top:8px;
+}
+.support-thread-empty{ font-size:11px; color:var(--text-faint); padding:10px 2px; }
+.support-msg{
+  max-width:85%; border-radius:8px; padding:8px 10px; font-size:12px; line-height:1.5;
+  border:1px solid var(--grid); background:var(--bg);
+}
+.support-msg.from-user{ align-self:flex-end; border-color:rgba(92,255,178,0.3); }
+.support-msg.from-admin{ align-self:flex-start; }
+.support-msg-meta{ font-size:9.5px; color:var(--text-faint); margin-bottom:4px; }
+
+/* ---- почтовый ящик админа (is_admin=1 в D1): список тредов + открытая переписка ---- */
+.admin-thread-list{ display:flex; flex-direction:column; gap:6px; margin-bottom:6px; }
+.admin-thread-list-empty{
+  font-size:11px; color:var(--text-faint); padding:16px 4px;
+  border:1px dashed var(--grid); border-radius:6px; text-align:center;
+}
+.admin-thread-item{
+  display:flex; flex-direction:column; gap:3px;
+  text-align:left; width:100%;
+  background:var(--panel); border:1px solid var(--grid); border-radius:7px;
+  padding:10px 12px; cursor:pointer;
+  font-family:'IBM Plex Mono', monospace;
+  transition:border-color 0.15s ease, background 0.15s ease;
+}
+.admin-thread-item:hover{ border-color:rgba(92,255,178,0.35); }
+.admin-thread-item.unread{ background:rgba(92,255,178,0.06); border-color:rgba(92,255,178,0.3); }
+.admin-thread-item-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.admin-thread-item-name{
+  font-size:12px; color:var(--text); font-weight:600;
+  display:flex; align-items:center; gap:6px; min-width:0;
+}
+.admin-thread-item-name span.who{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.admin-thread-item.unread .admin-thread-item-name::before{
+  content:''; width:6px; height:6px; border-radius:50%; background:var(--ul); box-shadow:0 0 6px var(--ul); flex-shrink:0;
+}
+.admin-thread-item-date{ font-size:9.5px; color:var(--text-faint); flex-shrink:0; }
+.admin-thread-item-preview{
+  font-size:11px; color:var(--text-dim); line-height:1.4;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.admin-thread-badge{
+  font-size:9px; font-weight:700; color:var(--bg); background:var(--ul);
+  border-radius:10px; padding:1px 6px; flex-shrink:0;
+}
+.admin-thread-head{
+  display:flex; align-items:center; gap:12px; margin-bottom:12px;
+}
+.admin-thread-user{ font-size:12px; color:var(--text); }
+.admin-thread-user .who-email{ color:var(--text-faint); font-size:10.5px; margin-left:6px; }
+
+/* ================= цветовые темы ================= */
+
+/* --- тема: чёрная --- */
+html[data-theme="black"]{
+  --bg: #000000;
+  --panel: #0a0a0a;
+  --panel-raised: #111111;
+  --grid: #222222;
+  --text: #e8e8e8;
+  --text-dim: #888888;
+  --text-faint: #444444;
+  --dl: #e8e8e8;
+  --ul: #aaaaaa;
+  --ping-c: #cccccc;
+  background-color:#000;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.018) 0px, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 46px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.018) 0px, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 46px);
+}
+/* фон у <body> раньше был жёстко зашит зелёным (см. правило body{...} выше)
+   и не менялся вместе с темой — так что «чёрная»/«белая» темы красили только
+   мелкие элементы (кнопки, текст), а весь фон страницы оставался зелёным.
+   Переопределяем фон body для каждой темы отдельно. */
+html[data-theme="black"] body{
+  background-color:#000000;
+  background-image:
+    linear-gradient(135deg, rgba(24,24,24,0.4) 0%, rgba(10,10,10,0.22) 22%, rgba(3,3,3,0.85) 48%, #000000 100%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 46px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 46px),
+    radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px);
+  background-size:auto, auto, auto, 46px 46px;
+  background-attachment:fixed;
+  background-repeat:no-repeat, repeat, repeat, repeat;
+}
+html[data-theme="black"] body::before{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='280'%3E%3Cg stroke='%23ffffff' stroke-width='0.6' opacity='0.35'%3E%3Cline x1='0' y1='120' x2='90' y2='55'/%3E%3Cline x1='90' y1='55' x2='170' y2='75'/%3E%3Cline x1='0' y1='170' x2='60' y2='150'/%3E%3C/g%3E%3Cg fill='%23ffffff' opacity='0.55'%3E%3Ccircle cx='0' cy='120' r='1.6'/%3E%3Ccircle cx='90' cy='55' r='1.6'/%3E%3Ccircle cx='170' cy='75' r='1.4'/%3E%3Ccircle cx='60' cy='150' r='1.4'/%3E%3Ccircle cx='0' cy='170' r='1.4'/%3E%3Ccircle cx='140' cy='20' r='1.2'/%3E%3Ccircle cx='230' cy='40' r='1.2'/%3E%3Ccircle cx='260' cy='90' r='1.4'/%3E%3Ccircle cx='300' cy='60' r='1.2'/%3E%3C/g%3E%3C/svg%3E");
+}
+html[data-theme="black"] body::after{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='280'%3E%3Cg fill='%23ffffff' opacity='0.5'%3E%3Ccircle cx='18' cy='260' r='1.3'/%3E%3Ccircle cx='42' cy='262' r='1.1'/%3E%3Ccircle cx='70' cy='258' r='1.3'/%3E%3Ccircle cx='100' cy='263' r='1.1'/%3E%3Ccircle cx='130' cy='259' r='1.3'/%3E%3Ccircle cx='160' cy='262' r='1.1'/%3E%3Ccircle cx='190' cy='258' r='1.3'/%3E%3Ccircle cx='60' cy='230' r='1.2'/%3E%3Ccircle cx='95' cy='225' r='1.2'/%3E%3Ccircle cx='20' cy='210' r='1.2'/%3E%3C/g%3E%3C/svg%3E");
+}
+html[data-theme="black"] .hub-eyebrow .dot{ background:#fff; box-shadow:0 0 8px #fff; }
+html[data-theme="black"] .titlebar-dot{ background:#fff; box-shadow:0 0 6px #fff; }
+html[data-theme="black"] #burgerBtn.open{ border-color:#fff; background:rgba(255,255,255,0.06); }
+html[data-theme="black"] #burgerBtn.open span{ background:#fff; }
+html[data-theme="black"] #burgerBtn:hover{ border-color:#fff; }
+html[data-theme="black"] .sp-chip.active{ border-color:#fff; color:#fff; background:rgba(255,255,255,0.08); }
+html[data-theme="black"] .search-bar:focus-within{ border-color:#fff; box-shadow:0 0 0 3px rgba(255,255,255,0.08),0 24px 60px rgba(0,0,0,0.45); }
+html[data-theme="black"] .hub-title span{ color:#fff; }
+html[data-theme="black"]::before{ display:none; }
+html[data-theme="black"]::after{ display:none; }
+
+/* --- тема: белая --- */
+html[data-theme="white"]{
+  --bg: #f8f9fa;
+  --panel: #ffffff;
+  --panel-raised: #f0f2f4;
+  --grid: #dde1e6;
+  --text: #111318;
+  --text-dim: #4a5568;
+  --text-faint: #8a9ab0;
+  --dl: #0f6fbd;
+  --ul: #d97706;
+  --ping-c: #0891b2;
+  --err: #dc2626;
+  --safe-green: #059669;
+  background-color:#f8f9fa;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.025) 0px, rgba(0,0,0,0.025) 1px, transparent 1px, transparent 46px),
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.025) 0px, rgba(0,0,0,0.025) 1px, transparent 1px, transparent 46px);
+}
+html[data-theme="white"] body{
+  background-color:#f8f9fa;
+  background-image:
+    linear-gradient(135deg, rgba(255,255,255,0.6) 0%, rgba(240,242,244,0.35) 22%, rgba(226,230,235,0.55) 48%, #eef0f2 100%),
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.025) 0px, rgba(0,0,0,0.025) 1px, transparent 1px, transparent 46px),
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.025) 0px, rgba(0,0,0,0.025) 1px, transparent 1px, transparent 46px),
+    radial-gradient(circle, rgba(0,0,0,0.035) 1px, transparent 1.4px);
+  background-size:auto, auto, auto, 46px 46px;
+  background-attachment:fixed;
+  background-repeat:no-repeat, repeat, repeat, repeat;
+}
+html[data-theme="white"] body::before{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='280'%3E%3Cg stroke='%230f6fbd' stroke-width='0.6' opacity='0.3'%3E%3Cline x1='0' y1='120' x2='90' y2='55'/%3E%3Cline x1='90' y1='55' x2='170' y2='75'/%3E%3Cline x1='0' y1='170' x2='60' y2='150'/%3E%3C/g%3E%3Cg fill='%230f6fbd' opacity='0.4'%3E%3Ccircle cx='0' cy='120' r='1.6'/%3E%3Ccircle cx='90' cy='55' r='1.6'/%3E%3Ccircle cx='170' cy='75' r='1.4'/%3E%3Ccircle cx='60' cy='150' r='1.4'/%3E%3Ccircle cx='0' cy='170' r='1.4'/%3E%3Ccircle cx='140' cy='20' r='1.2'/%3E%3Ccircle cx='230' cy='40' r='1.2'/%3E%3Ccircle cx='260' cy='90' r='1.4'/%3E%3Ccircle cx='300' cy='60' r='1.2'/%3E%3C/g%3E%3C/svg%3E");
+}
+html[data-theme="white"] body::after{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='280'%3E%3Cg fill='%230f6fbd' opacity='0.35'%3E%3Ccircle cx='18' cy='260' r='1.3'/%3E%3Ccircle cx='42' cy='262' r='1.1'/%3E%3Ccircle cx='70' cy='258' r='1.3'/%3E%3Ccircle cx='100' cy='263' r='1.1'/%3E%3Ccircle cx='130' cy='259' r='1.3'/%3E%3Ccircle cx='160' cy='262' r='1.1'/%3E%3Ccircle cx='190' cy='258' r='1.3'/%3E%3Ccircle cx='60' cy='230' r='1.2'/%3E%3Ccircle cx='95' cy='225' r='1.2'/%3E%3Ccircle cx='20' cy='210' r='1.2'/%3E%3C/g%3E%3C/svg%3E");
+}
+html[data-theme="white"] .titlebar{ background:var(--panel); border-bottom:1px solid var(--grid); }
+html[data-theme="white"] .titlebar-dot{ background:var(--dl); box-shadow:none; }
+html[data-theme="white"] .hub-eyebrow .dot{ background:var(--dl); box-shadow:none; animation:none; }
+html[data-theme="white"] .hub-title span{ color:var(--dl); }
+html[data-theme="white"] .search-bar{ background:var(--panel); border-color:var(--grid); box-shadow:0 4px 16px rgba(0,0,0,0.08); }
+html[data-theme="white"] .search-bar:focus-within{ border-color:var(--dl); box-shadow:0 0 0 3px rgba(15,111,189,0.12),0 4px 16px rgba(0,0,0,0.08); }
+html[data-theme="white"] .sp-chip.active{ border-color:var(--dl); color:var(--dl); background:rgba(15,111,189,0.08); }
+html[data-theme="white"] .burger-menu{ background:var(--panel); border-color:var(--grid); }
+html[data-theme="white"] #burgerBtn{ border-color:var(--grid); }
+html[data-theme="white"] #burgerBtn:hover{ border-color:var(--dl); }
+html[data-theme="white"] #burgerBtn span{ background:var(--text-dim); }
+html[data-theme="white"] .tb-btn:hover{ background:rgba(0,0,0,0.06); color:var(--text); }
+html[data-theme="white"] .hub-sect{ border-color:var(--grid); }
+html[data-theme="white"]::before{ display:none; }
+html[data-theme="white"]::after{ display:none; }
+
+/* ================= выбор темы в настройках ================= */
+.theme-swatches{
+  display:flex; gap:10px; flex-wrap:wrap; margin-top:2px;
+}
+.theme-swatch{
+  display:flex; flex-direction:column; align-items:center; gap:7px;
+  background:transparent; border:1px solid var(--grid); border-radius:8px;
+  padding:10px 14px; cursor:pointer; min-width:72px;
+  transition:border-color 0.15s ease, background 0.15s ease;
+}
+.theme-swatch:hover{ border-color:var(--text-dim); }
+.theme-swatch.active{ border-color:var(--dl); background:rgba(92,255,178,0.06); }
+html[data-theme="white"] .theme-swatch.active{ background:rgba(15,111,189,0.07); border-color:var(--dl); }
+html[data-theme="black"] .theme-swatch.active{ background:rgba(255,255,255,0.07); border-color:#fff; }
+.swatch-preview{
+  width:32px; height:20px; border-radius:4px; border:1px solid rgba(255,255,255,0.12);
+}
+.swatch-green{ background:linear-gradient(135deg,#0A1210,#0f3326); border-color:rgba(92,255,178,0.35); }
+.swatch-black{ background:linear-gradient(135deg,#000,#111); border-color:rgba(255,255,255,0.2); }
+.swatch-white{ background:linear-gradient(135deg,#f8f9fa,#e8ecf0); border-color:rgba(0,0,0,0.15); }
+.swatch-label{ font-size:10px; letter-spacing:0.06em; color:var(--text-dim); text-transform:lowercase; }
+
+/* ---- модалка «разработчик» (настройки → приложение → разработчик) ---- */
+.dev-panel-item{
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  border:1px solid var(--grid); border-radius:8px; padding:12px 14px;
+}
+.dev-panel-item-title{ font-size:12px; color:var(--text); font-weight:600; margin-bottom:4px; }
+.dev-panel-item-desc{ font-size:10.5px; color:var(--text-faint); line-height:1.5; }
+.dev-panel-item .ghost-btn{ flex-shrink:0; }
+.dev-panel-item .ghost-btn.on{ border-color:var(--dl); color:var(--dl); }

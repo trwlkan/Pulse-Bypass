@@ -1,0 +1,10 @@
+# Общий список — часто блокируемые вместе с YouTube/Discord сервисы
+instagram.com
+facebook.com
+fbcdn.net
+twitter.com
+x.com
+telegram.org
+t.me
+whatsapp.com
+whatsapp.net

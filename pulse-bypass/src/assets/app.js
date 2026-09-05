@@ -58,7 +58,7 @@
      4. Состояние приложения
      ==================================================================== */
   const hasEngine = typeof window.pulse !== 'undefined';
-  let config = { domains: { youtube: true, discord: true, general: false, custom: [] }, apps: [] };
+  let config = { domains: { youtube: true, discord: true, general: false, banned: false, custom: [] }, apps: [] };
   let strategies = [];
   let engineStatus = { status: 'stopped', strategyId: null };
 
@@ -146,6 +146,7 @@
     $('chkYoutube').checked = config.domains.youtube !== false;
     $('chkDiscord').checked = config.domains.discord !== false;
     $('chkGeneral').checked = !!config.domains.general;
+    $('chkBanned').checked = !!config.domains.banned;
     $('chkAutostart').checked = !!config.autostartEngine;
     $('chkLaunchBoot').checked = !!config.launchOnBoot;
     $('chkTray').checked = config.minimizeToTrayOnClose !== false;
@@ -225,11 +226,12 @@
     if (hasEngine) window.pulse.updateConfig({ lastStrategyId: strategySelect.value });
   });
 
-  ['chkYoutube', 'chkDiscord', 'chkGeneral'].forEach((id) => {
+  ['chkYoutube', 'chkDiscord', 'chkGeneral', 'chkBanned'].forEach((id) => {
     $(id).addEventListener('change', () => {
       config.domains.youtube = $('chkYoutube').checked;
       config.domains.discord = $('chkDiscord').checked;
       config.domains.general = $('chkGeneral').checked;
+      config.domains.banned = $('chkBanned').checked;
       if (hasEngine) window.pulse.updateConfig({ domains: config.domains });
     });
   });

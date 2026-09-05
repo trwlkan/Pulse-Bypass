@@ -131,6 +131,7 @@ class ZapretManager extends EventEmitter {
     if (domains.youtube !== false) readBuiltin('youtube.txt').forEach((h) => lines.add(h));
     if (domains.discord !== false) readBuiltin('discord.txt').forEach((h) => lines.add(h));
     if (domains.general) readBuiltin('general.txt').forEach((h) => lines.add(h));
+    if (domains.banned) readBuiltin('banned-services.txt').forEach((h) => lines.add(h));
 
     (domains.custom || []).forEach((d) => {
       if (d && d.enabled !== false && d.host) lines.add(String(d.host).trim().toLowerCase());

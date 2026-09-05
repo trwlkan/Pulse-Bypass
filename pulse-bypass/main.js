@@ -17,6 +17,8 @@ const store = new Store({
     domains: {
       youtube: true,
       discord: true,
+      general: false,
+      banned: false,
       custom: [] // { id, host, enabled }
     },
     apps: [] // { id, name, exePath, enabled } — для WF-фильтрации по .exe (winws --wf-l3 / per-process через service)

@@ -99,6 +99,29 @@ const STRATEGIES = [
     ]
   },
   {
+    id: 'goodbyedpi_style',
+    name: 'GoodbyeDPI-style (fake + autottl)',
+    description: 'Пресет по мотивам классических настроек GoodbyeDPI: TTL подбирается автоматически так, чтобы фейковый пакет доходил до DPI провайдера, но не долетал до сервера. Отдельная ветка для 80 и 443 порта, без сегментации. Иногда работает там, где не помогают split-стратегии выше.',
+    args: [
+      '--wf-tcp=80,443',
+      '--wf-udp=' + BASE_UDP_PORTS,
+      '--filter-tcp=80',
+      '--hostlist={LISTS}',
+      '--dpi-desync=fake,disorder',
+      '--dpi-desync-autottl=1',
+      '--dpi-desync-fooling=datanoack',
+      '--dpi-desync-repeats=10',
+      '--new',
+      '--filter-tcp=443',
+      '--hostlist={LISTS}',
+      '--dpi-desync=fake,disorder',
+      '--dpi-desync-autottl=1',
+      '--dpi-desync-fooling=badseq',
+      '--dpi-desync-fake-tls=default',
+      '--dpi-desync-repeats=10'
+    ]
+  },
+  {
     id: 'udp_quic',
     name: 'UDP/QUIC (для Discord)',
     description: 'Отдельная ветка для UDP/QUIC-трафика голосовых звонков Discord — фейковые UDP-пакеты перед реальными.',

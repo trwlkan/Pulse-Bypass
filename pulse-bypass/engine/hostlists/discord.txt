@@ -1,0 +1,10 @@
+# Discord — базовый список доменов
+discord.com
+discord.gg
+discordapp.com
+discordapp.net
+discord.media
+discord.co
+gateway.discord.gg
+cdn.discordapp.com
+media.discordapp.net

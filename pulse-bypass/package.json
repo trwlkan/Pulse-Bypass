@@ -1,0 +1,50 @@
+{
+  "name": "pulse-bypass-improved",
+  "version": "2.0.0",
+  "description": "Улучшенное приложение для обхода блокировок с исправлениями критических проблем",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64",
+    "dev": "electron . --inspect"
+  },
+  "keywords": [
+    "bypass",
+    "dpi",
+    "zapret",
+    "russia",
+    "vpn",
+    "proxy"
+  ],
+  "author": "Pulse Bypass Team",
+  "license": "MIT",
+  "dependencies": {
+    "electron-store": "^8.1.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.pulsebypass.app",
+    "productName": "Pulse Bypass",
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "extraResources": [
+      {
+        "from": "engine/vendor/zapret",
+        "to": "zapret",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "files": [
+      "**/*",
+      "!node_modules/**/*",
+      "!.git/**/*"
+    ]
+  }
+}

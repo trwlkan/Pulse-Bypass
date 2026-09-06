@@ -437,9 +437,10 @@ ipcMain.handle('config:addApp', async (_e, appData) => {
   return list;
 });
 
-ipcMain.handle('config:removeApp', (_e, id) => {
+ipcMain.handle('config:removeApp', async (_e, id) => {
   const list = store.get('apps', []).filter((a) => a.id !== id);
   store.set('apps', list);
+  await applyDomainsChange();
   return list;
 });
 

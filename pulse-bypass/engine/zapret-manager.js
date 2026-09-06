@@ -1,11 +1,10 @@
 'use strict';
 
 const { EventEmitter } = require('events');
-const { spawn, execFile, exec } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const net = require('net');
 const tls = require('tls');
 const https = require('https');
 
@@ -16,14 +15,6 @@ const DEFAULT_TEST_TARGETS = [
   { host: 'discord.com', port: 443 }
 ];
 
-/**
- * ZapretManager с исправлениями:
- * 1. Правильная сборка hostlist с пользовательскими доменами + санитайз
- * 2. Полное завершение всех процессов winws.exe и драйвера WinDivert
- * 3. Writable runtime lists dir в AppData (не read-only resources)
- * 4. Быстрый автоподбор с HTTPS-тестированием и пользовательскими доменами
- * 5. Сохранение результатов тестирования стратегий
- */
 class ZapretManager extends EventEmitter {
   constructor({ resourcesPath, listsPath, getStore }) {
     super();
@@ -32,10 +23,8 @@ class ZapretManager extends EventEmitter {
     this.getStore = getStore;
 
     this.userDataDir = path.join(os.homedir(), 'AppData', 'Roaming', 'pulse-bypass');
-    this.runtimeDir = path.join(this.userDataDir, 'runtime');
     this.logsDir = path.join(this.userDataDir, 'logs');
-    this.runtimeListsDir = path.join(this.runtimeDir, 'lists');
-    for (const dir of [this.userDataDir, this.runtimeDir, this.logsDir, this.runtimeListsDir]) {
+    for (const dir of [this.userDataDir, this.logsDir]) {
       try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
     }
 
@@ -44,11 +33,9 @@ class ZapretManager extends EventEmitter {
     this.status = 'stopped';
     this.lastError = null;
     
-    // Кэш результатов тестирования стратегий
     this.strategyTestResults = this._loadStrategyResults();
   }
 
-  // engine/vendor/zapret/bin — сюда распакован официальный релиз
   get binDir() {
     return path.join(this.resourcesPath, 'bin');
   }
@@ -57,62 +44,22 @@ class ZapretManager extends EventEmitter {
     return path.join(this.binDir, process.platform === 'win32' ? 'winws.exe' : 'winws');
   }
 
-  // Источник официальных списков (read-only в packaged режиме)
   get vendorListsDir() {
     return path.join(this.resourcesPath, 'lists');
   }
 
-  // Writable runtime lists dir — сюда копируем официальные списки и
-  // генерируем list-general-user.txt / list-exclude-user.txt.
-  // {LISTS} в стратегиях теперь указывает сюда, а не в read-only resources.
-  get runtimeListsPath() {
-    return this.runtimeListsDir;
-  }
-
   get userHostlistPath() {
-    return path.join(this.runtimeListsDir, 'list-general-user.txt');
+    return path.join(this.vendorListsDir, 'list-general-user.txt');
   }
 
   get userExcludePath() {
-    return path.join(this.runtimeListsDir, 'list-exclude-user.txt');
+    return path.join(this.vendorListsDir, 'list-exclude-user.txt');
   }
 
   isEngineInstalled() {
     try { return fs.existsSync(this.binPath); } catch (e) { return false; }
   }
 
-  /**
-   * Копируем официальные списки из vendor lists dir в runtime lists dir.
-   * В packaged режиме vendor lists dir доступен только для чтения, а winws.exe
-   * нужно читать list-general-user.txt из writable-директории.
-   */
-  syncVendorLists() {
-    try {
-      const files = fs.readdirSync(this.vendorListsDir);
-      for (const file of files) {
-        const src = path.join(this.vendorListsDir, file);
-        const dst = path.join(this.runtimeListsDir, file);
-        // Копируем только если файла нет в runtime или он отличается
-        if (fs.existsSync(src)) {
-          try {
-            const srcStat = fs.statSync(src);
-            if (!fs.existsSync(dst) || fs.statSync(dst).size !== srcStat.size) {
-              fs.copyFileSync(src, dst);
-            }
-          } catch (e) {
-            // Игнорируем ошибки копирования отдельных файлов
-          }
-        }
-      }
-    } catch (e) {
-      this._log('Не удалось скопировать официальные списки: ' + e.message);
-    }
-  }
-
-  /**
-   * Проверка прав администратора.
-   * winws.exe требует права администратора для установки/открытия WinDivert.
-   */
   isElevated() {
     if (process.platform !== 'win32') return Promise.resolve(true);
     return new Promise((resolve) => {
@@ -126,9 +73,7 @@ class ZapretManager extends EventEmitter {
       if (fs.existsSync(filePath)) {
         return JSON.parse(fs.readFileSync(filePath, 'utf8'));
       }
-    } catch (e) {
-      this._log('Не удалось загрузить результаты тестирования стратегий: ' + e.message);
-    }
+    } catch (e) {}
     return {};
   }
 
@@ -136,37 +81,28 @@ class ZapretManager extends EventEmitter {
     const filePath = path.join(this.userDataDir, 'strategy-test-results.json');
     try {
       fs.writeFileSync(filePath, JSON.stringify(this.strategyTestResults, null, 2));
-    } catch (e) {
-      this._log('Не удалось сохранить результаты тестирования: ' + e.message);
-    }
+    } catch (e) {}
   }
 
   /**
    * Санитизация домена: убирает протокол, путь, порт, query.
-   * Принимает: https://example.com/path, http://sub.example.com:8080/, example.com/
-   * Возвращает: example.com
+   * https://example.com/path → example.com
    */
   _sanitizeDomain(host) {
     let h = String(host).trim().toLowerCase();
-    // Убираем протокол
     h = h.replace(/^https?:\/\//, '');
-    // Убираем путь и query
     h = h.split('/')[0].split('?')[0].split('#')[0];
-    // Убираем порт
     h = h.split(':')[0];
-    // Убираем точку в конце
     h = h.replace(/\.$/, '');
     return h;
   }
 
   /**
-   * ИСПРАВЛЕНО: правильно добавляет пользовательские домены с санитизацией.
-   * Пишет в runtime lists dir (writable), не в read-only resources.
+   * Собирает hostlist с пользовательскими доменами + санитизация.
+   * Пишет в vendorListsDir (как оригинал) — приложение запускается
+   * от имени администратора, так что директория writable.
    */
   rebuildHostlist(config) {
-    // Синхронизируем официальные списки в writable-директорию
-    this.syncVendorLists();
-
     const lines = [];
     const seen = new Set();
 
@@ -178,7 +114,6 @@ class ZapretManager extends EventEmitter {
       }
     };
 
-    // Встроенные списки (переключаемые тумблерами в UI)
     if (config.domains && config.domains.youtube !== false) {
       const ytPath = path.join(this.listsPath, 'youtube.txt');
       if (fs.existsSync(ytPath)) {
@@ -200,7 +135,6 @@ class ZapretManager extends EventEmitter {
       }
     }
 
-    // Пользовательские домены из config.domains.custom
     if (config.domains && Array.isArray(config.domains.custom)) {
       config.domains.custom.forEach((entry) => {
         if (entry.enabled !== false && entry.host) {
@@ -209,7 +143,6 @@ class ZapretManager extends EventEmitter {
       });
     }
 
-    // Домены приложений
     if (Array.isArray(config.apps)) {
       config.apps.forEach((app) => {
         if (app.enabled !== false && Array.isArray(app.domains)) {
@@ -223,7 +156,7 @@ class ZapretManager extends EventEmitter {
       : '# Pulse Bypass: пользовательские домены появятся здесь\ndomain.example.abc';
 
     try {
-      fs.mkdirSync(this.runtimeListsDir, { recursive: true });
+      fs.mkdirSync(this.vendorListsDir, { recursive: true });
       fs.writeFileSync(this.userHostlistPath, content, 'utf8');
       if (!fs.existsSync(this.userExcludePath)) {
         fs.writeFileSync(this.userExcludePath, 'domain.example.abc', 'utf8');
@@ -236,67 +169,32 @@ class ZapretManager extends EventEmitter {
 
   /**
    * ИСПРАВЛЕНО: полностью завершает ВСЕ процессы winws.exe и драйвер WinDivert.
-   * - Сначала убивает дерево процессов по PID (если есть)
-   * - Затем убивает все остальные инстансы winws.exe
-   * - Останавливает и удаляет драйвер WinDivert
-   * - Проверяет, что процессы действительно завершены
+   * Убивает по PID + все инстансы + останавливает драйвер.
    */
   killAllInstances() {
     if (process.platform !== 'win32') return Promise.resolve();
-    
     const run = (cmd, args) => new Promise((resolve) => {
       execFile(cmd, args, { windowsHide: true }, () => resolve());
     });
 
-    // Убиваем по PID, если есть
+    // Убиваем по PID если есть
     const killByPid = this.proc && this.proc.pid
       ? run('taskkill', ['/F', '/T', '/PID', String(this.proc.pid)])
       : Promise.resolve();
 
-    // Убиваем все инстансы winws.exe (включая дочерние)
-    const killAllWinws = () => run('taskkill', ['/F', '/IM', 'winws.exe', '/T']);
-
-    // Останавливаем и удаляем драйвер WinDivert (обе версии)
-    const cleanupDriver = () => Promise.resolve()
+    return killByPid
+      .then(() => run('taskkill', ['/F', '/IM', 'winws.exe', '/T']))
       .then(() => run('net', ['stop', 'WinDivert']))
       .then(() => run('sc', ['delete', 'WinDivert']))
       .then(() => run('net', ['stop', 'WinDivert14']))
       .then(() => run('sc', ['delete', 'WinDivert14']))
       .catch(() => {});
-
-    // Проверка, что winws.exe действительно завершён
-    const verifyKilled = () => new Promise((resolve) => {
-      exec('tasklist /FI "IMAGENAME eq winws.exe" /NH', { windowsHide: true }, (err, stdout) => {
-        if (err || !stdout) { resolve(true); return; }
-        const stillRunning = stdout.toLowerCase().includes('winws.exe');
-        if (stillRunning) {
-          // Повторная попытка
-          run('taskkill', ['/F', '/IM', 'winws.exe']).then(() => resolve(false));
-        } else {
-          resolve(true);
-        }
-      });
-    });
-
-    return killByPid
-      .then(killAllWinws)
-      .then(cleanupDriver)
-      .then(verifyKilled)
-      .then((ok) => {
-        if (!ok) {
-          return verifyKilled(); // Вторая проверка после повторной попытки
-        }
-        return true;
-      })
-      .then(() => {
-        this._log('Все процессы winws.exe и драйвер WinDivert остановлены');
-      });
   }
 
   async ensureEngine() {
     if (this.isEngineInstalled()) return true;
     const { fetchZapretBundle } = require('./vendor-fetch');
-    this._log('Движок zapret не найден — загружаю официальный релиз bol-van/zapret-win-bundle...');
+    this._log('Движок zapret не найден — загружаю официальный релиз...');
     try {
       await fetchZapretBundle(this.binDir, (msg) => this._log(msg));
       return this.isEngineInstalled();
@@ -310,9 +208,7 @@ class ZapretManager extends EventEmitter {
     return STRATEGIES.map(({ id, name, description }) => {
       const result = this.strategyTestResults[id];
       return { 
-        id, 
-        name, 
-        description,
+        id, name, description,
         tested: !!result,
         working: result ? result.success : null,
         lastTest: result ? result.timestamp : null
@@ -330,11 +226,7 @@ class ZapretManager extends EventEmitter {
   isRunning() { return this.status === 'running' || this.status === 'testing'; }
   
   getStatus() { 
-    return { 
-      status: this.status, 
-      strategyId: this.currentStrategyId,
-      error: this.lastError
-    }; 
+    return { status: this.status, strategyId: this.currentStrategyId, error: this.lastError }; 
   }
 
   async start(strategyId) {
@@ -344,9 +236,7 @@ class ZapretManager extends EventEmitter {
       this.lastError = 'Нужны права администратора';
       throw new Error(
         'Нужны права администратора: закройте приложение и запустите его ' +
-        'через "Запуск от имени администратора" (ПКМ по ярлыку) — без этого ' +
-        'winws.exe не может установить драйвер WinDivert, и обход не запустится ' +
-        'ни на одной стратегии.'
+        'через "Запуск от имени администратора" (ПКМ по ярлыку).'
       );
     }
 
@@ -370,19 +260,16 @@ class ZapretManager extends EventEmitter {
 
     // {BIN} и {LISTS} — префиксы папок (с завершающим слэшем)
     const binPrefix = this.binDir + path.sep;
-    const listsPrefix = this.runtimeListsDir + path.sep;
+    const listsPrefix = this.vendorListsDir + path.sep;
     const args = strategy.args.map((a) =>
       a.replace(/{BIN}/g, binPrefix).replace(/{LISTS}/g, listsPrefix)
     );
 
     this._setStatus('starting');
     this._log(`Запуск стратегии "${strategy.name}"...`);
-    this._log('Команда: winws.exe ' + args.join(' '));
 
     return new Promise((resolve, reject) => {
       try {
-        // Захватываем child в локальную переменную, чтобы обработчик exit
-        // не обнулил this.proc после рестарта стратегии.
         const child = spawn(this.binPath, args, {
           cwd: this.binDir,
           windowsHide: true,
@@ -413,8 +300,8 @@ class ZapretManager extends EventEmitter {
         });
 
         setTimeout(() => {
-          const alive = this.proc === child && child.exitCode === null && !child.killed;
-          if (alive) {
+          // Проверяем что процесс ещё жив
+          if (this.proc === child && child.exitCode === null) {
             this.currentStrategyId = strategyId;
             this._setStatus('running');
             this._log('Обход активен');
@@ -435,32 +322,30 @@ class ZapretManager extends EventEmitter {
   }
 
   /**
-   * ИСПРАВЛЕНО: полностью останавливает обход и завершает ВСЕ фоновые процессы.
-   * - Завершает процесс по PID (дерево процессов)
-   * - Убивает все оставшиеся инстансы winws.exe
-   * - Останавливает и удаляет драйвер WinDivert
-   * - Проверяет что процессы действительно завершены
+   * ИСПРАВЛЕНО: полностью останавливает обход и завершает ВСЕ процессы.
+   * - taskkill /F /T /PID для дерева процессов
+   * - taskkill /F /IM winws.exe для всех инстансов
+   * - Остановка и удаление драйвера WinDivert
    */
   async stop() {
     const wasActive = this.isRunning() || !!this.proc;
     if (wasActive) this._log('Остановка обхода...');
     this._setStatus('stopped');
 
-    if (this.proc && !this.proc.killed) {
-      // На Windows используем taskkill для надёжного завершения дерева процессов
-      if (process.platform === 'win32' && this.proc.pid) {
+    // Убиваем процесс по PID (дерево процессов)
+    if (this.proc && this.proc.pid) {
+      if (process.platform === 'win32') {
         await new Promise((resolve) => {
-          execFile('taskkill', ['/F', '/T', '/PID', String(this.proc.pid)], 
+          execFile('taskkill', ['/F', '/T', '/PID', String(this.proc.pid)],
             { windowsHide: true }, () => resolve());
         });
       } else {
         this.proc.kill('SIGTERM');
       }
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 500));
     }
 
-    // killAllInstances всегда вызывается — даже если proc уже null,
-    // чтобы гарантированно завершить все фоновые процессы.
+    // killAllInstances всегда вызывается — даже если proc уже null
     await this.killAllInstances();
     this.proc = null;
     this.currentStrategyId = null;
@@ -468,19 +353,16 @@ class ZapretManager extends EventEmitter {
   }
 
   /**
-   * УЛУЧШЕНО: автоподбор с HTTPS-тестированием и пользовательскими доменами
+   * Автоподбор стратегии с HTTPS-тестированием.
    */
-  async autoDetect(targets = DEFAULT_TEST_TARGETS, fastMode = true) {
+  async autoDetect(targets = DEFAULT_TEST_TARGETS) {
     const elevated = await this.isElevated();
     if (!elevated) {
       this._setStatus('error');
       this.lastError = 'Нужны права администратора';
-      this._log('Автоподбор остановлен: нет прав администратора');
       throw new Error(
         'Нужны права администратора: закройте приложение и запустите его ' +
-        'через "Запуск от имени администратора" (ПКМ по ярлыку) — без этого ' +
-        'winws.exe не может установить драйвер WinDivert, и ни одна стратегия ' +
-        'не запустится.'
+        'через "Запуск от имени администратора" (ПКМ по ярлыку).'
       );
     }
 
@@ -515,7 +397,6 @@ class ZapretManager extends EventEmitter {
       });
     }
 
-    // Ограничиваем количество тестовых целей
     const testTargets = userTargets.slice(0, 6);
     this._log(`Тестовые цели: ${testTargets.map(t => t.host).join(', ')}`);
 
@@ -543,33 +424,16 @@ class ZapretManager extends EventEmitter {
 
       try {
         await this.start(strategy.id);
-        // Даём фильтру время перехватить трафик
         await new Promise((r) => setTimeout(r, 1000));
 
-        // HTTPS-тест с fallback на TLS
         const success = await this._testConnection(testTargets, 5000);
 
         if (success) {
-          // Дополнительная проверка: если есть пользовательские цели,
-          // хотя бы одна из них должна пройти
-          const hasUserTargets = testTargets.length > DEFAULT_TEST_TARGETS.length;
-          let userTargetsOk = true;
-          if (hasUserTargets) {
-            const userOnlyTargets = testTargets.slice(DEFAULT_TEST_TARGETS.length);
-            userTargetsOk = await this._testConnection(userOnlyTargets, 5000);
-          }
-
-          if (userTargetsOk) {
-            this._log(`✓ Стратегия ${strategy.name} работает!`);
-            this.strategyTestResults[strategy.id] = { success: true, timestamp: Date.now() };
-            this._saveStrategyResults();
-            this._setStatus('running');
-            return { strategyId: strategy.id, success: true };
-          } else {
-            this._log(`✗ Стратегия ${strategy.name} работает для базовых сайтов, но не для пользовательских доменов`);
-            this.strategyTestResults[strategy.id] = { success: false, timestamp: Date.now() };
-            await this.stop();
-          }
+          this._log(`✓ Стратегия ${strategy.name} работает!`);
+          this.strategyTestResults[strategy.id] = { success: true, timestamp: Date.now() };
+          this._saveStrategyResults();
+          this._setStatus('running');
+          return { strategyId: strategy.id, success: true };
         } else {
           this._log(`✗ Стратегия ${strategy.name} не работает`);
           this.strategyTestResults[strategy.id] = { success: false, timestamp: Date.now() };
@@ -601,45 +465,33 @@ class ZapretManager extends EventEmitter {
         const success = await this._testConnection([{ host, port }], 5000);
         if (success) successCount++;
         await new Promise(r => setTimeout(r, 500));
-      } catch (e) {
-        // Игнорируем ошибки отдельных попыток
-      }
+      } catch (e) {}
     }
     
     const healthPercent = (successCount / attempts) * 100;
     const isHealthy = successCount >= Math.ceil(attempts * 0.6);
     
-    this._log(`${serviceName}: ${successCount}/${attempts} успешных (${healthPercent.toFixed(0)}%) - ${isHealthy ? '✓ работает' : '✗ не работает'}`);
+    this._log(`${serviceName}: ${successCount}/${attempts} (${healthPercent.toFixed(0)}%) - ${isHealthy ? '✓' : '✗'}`);
     
     return {
-      service: serviceName,
-      host,
-      port,
-      successCount,
-      totalAttempts: attempts,
-      healthPercent,
-      isHealthy
+      service: serviceName, host, port,
+      successCount, totalAttempts: attempts,
+      healthPercent, isHealthy
     };
   }
 
   /**
-   * ИСПРАВЛЕНО: HTTPS GET запрос с fallback на TLS handshake.
-   * Считаем успехом любой полученный HTTP status code (200-399),
-   * а при ошибке/таймауте fallback на TLS handshake.
+   * HTTPS GET тест с fallback на TLS handshake.
+   * Любой HTTP-ответ = соединение прошло через DPI.
    */
   async _testConnection(targets, timeout = 5000) {
-    const tests = targets.map((t) => this._tryHTTPS(t.host, t.port, timeout));
+    const tests = targets.map((t) => this._tryConnect(t.host, t.port, timeout));
     const results = await Promise.allSettled(tests);
     const ok = results.filter((r) => r.status === 'fulfilled' && r.value).length;
     return ok > 0;
   }
 
-  /**
-   * HTTPS GET запрос. Считаем успехом любой HTTP-ответ (даже 403/429),
-   * т.к. это значит что соединение прошло через DPI.
-   * При ошибке — fallback на TLS handshake.
-   */
-  _tryHTTPS(host, port, timeout) {
+  _tryConnect(host, port, timeout) {
     return new Promise((resolve) => {
       let settled = false;
       let req;
@@ -653,7 +505,7 @@ class ZapretManager extends EventEmitter {
       const timer = setTimeout(() => {
         if (req) req.destroy();
         // Fallback на TLS handshake
-        this._tryTLS(host, port, Math.min(timeout, 3000)).then(done);
+        this._tryTLS(host, port, 3000).then(done);
       }, timeout);
 
       req = https.request({
@@ -666,7 +518,7 @@ class ZapretManager extends EventEmitter {
         headers: { 'User-Agent': 'Mozilla/5.0 PulseBypass/2.0' }
       }, (res) => {
         clearTimeout(timer);
-        // Любой HTTP-ответ (даже 5xx) = соединение прошло через DPI
+        // Любой HTTP-ответ = соединение прошло
         res.destroy();
         done(true);
       });
@@ -674,14 +526,14 @@ class ZapretManager extends EventEmitter {
       req.on('error', () => {
         clearTimeout(timer);
         // Fallback на TLS handshake
-        this._tryTLS(host, port, Math.min(timeout, 3000)).then(done);
+        this._tryTLS(host, port, 3000).then(done);
       });
 
       req.on('timeout', () => {
         req.destroy();
         clearTimeout(timer);
         // Fallback на TLS handshake
-        this._tryTLS(host, port, Math.min(timeout, 3000)).then(done);
+        this._tryTLS(host, port, 3000).then(done);
       });
 
       req.end();

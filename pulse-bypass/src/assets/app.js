@@ -235,7 +235,18 @@
     engineStatus = state.status || engineStatus;
     serviceHealth = state.serviceHealth || {};
 
-    if (!state.engineReady) {
+    // ДОБАВЛЕНО: постоянное предупреждение, если приложение запущено без
+    // прав администратора — иначе пользователь узнаёт об этом только после
+    // клика "запустить обход", когда ВСЕ стратегии подряд падают с неясной
+    // "ошибка движка"/"ошибка запуска" (winws.exe не может открыть
+    // WinDivert без прав администратора).
+    if (state.isElevated === false) {
+      engineWarning.style.display = '';
+      engineWarning.className = 'pb-note err';
+      engineWarning.innerHTML =
+        'Запущено без прав администратора — обход не сможет запуститься ни на одной ' +
+        'стратегии. Закройте приложение и запустите его через «Запуск от имени администратора».';
+    } else if (!state.engineReady) {
       engineWarning.style.display = '';
       engineWarning.className = 'pb-note err';
       engineWarning.innerHTML = 'Движок zapret (winws.exe) не установлен. Нажмите «переустановить движок» в меню.';

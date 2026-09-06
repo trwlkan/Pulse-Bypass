@@ -1,11 +1,66 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, dialog } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 const ZapretManager = require('./engine/zapret-manager');
+
+/**
+ * ДОБАВЛЕНО: проверка прав администратора при старте приложения.
+ *
+ * winws.exe (движок zapret) не может установить/открыть драйвер WinDivert
+ * без прав администратора — без них ЛЮБАЯ стратегия падает почти мгновенно
+ * после старта с "ошибка движка"/"ошибка запуска", и это касается вообще
+ * всех стратегий без исключения (не зависит от провайдера или конкретной
+ * стратегии). Раньше приложение просто пыталось запускать движок и честно
+ * отражало эту ошибку, из-за чего казалось, что "ничего не работает" и
+ * автоподбор "постоянно пытается переподключиться", хотя причина была одна
+ * и очень простая — отсутствие прав администратора.
+ *
+ * Что делает эта проверка:
+ *  - если приложение уже запущено с правами администратора — ничего не
+ *    происходит, всё как раньше;
+ *  - если прав нет — показываем понятный диалог и предлагаем перезапустить
+ *    приложение с правами администратора через UAC (Start-Process -Verb
+ *    RunAs), не пытаясь молча стартовать движок, который всё равно упадёт.
+ *
+ * Электрон не даёт поднять права уже запущенного процесса "на лету" — это
+ * ограничение Windows, а не наше; единственный штатный способ — перезапуск
+ * с UAC-подтверждением, поэтому мы закрываем текущий (неэлевированный)
+ * процесс и стартуем новый через PowerShell Start-Process -Verb RunAs.
+ */
+function isElevatedWin() {
+  if (process.platform !== 'win32') return Promise.resolve(true);
+  return new Promise((resolve) => {
+    execFile('net', ['session'], (err) => resolve(!err));
+  });
+}
+
+function relaunchElevated() {
+  const exe = process.execPath;
+  // В dev-режиме process.execPath указывает на electron.exe, и нужно
+  // передать путь к приложению первым аргументом (как при `electron .`).
+  const args = app.isPackaged ? [] : [path.join(__dirname)];
+  const argString = args.map((a) => `'${a.replace(/'/g, "''")}'`).join(',');
+  const psCommand = argString
+    ? `Start-Process -FilePath '${exe}' -ArgumentList ${argString} -Verb RunAs`
+    : `Start-Process -FilePath '${exe}' -Verb RunAs`;
+
+  try {
+    spawn('powershell.exe', ['-NoProfile', '-Command', psCommand], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true
+    }).unref();
+  } catch (e) {
+    // Если перезапуск через UAC не удался (например, пользователь отменил
+    // системный диалог позже) — просто выходим, ничего страшного не
+    // произойдёт, пользователь может перезапустить вручную.
+  }
+  app.exit(0);
+}
 
 const store = new Store({
   name: 'pulse-bypass-config',
@@ -97,6 +152,27 @@ function createTray() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32' && !(await isElevatedWin())) {
+    const choice = await dialog.showMessageBox({
+      type: 'warning',
+      title: 'Нужны права администратора',
+      message: 'Pulse Bypass нужно запустить от имени администратора',
+      detail:
+        'Движок обхода (winws.exe) устанавливает системный драйвер WinDivert, ' +
+        'а это требует прав администратора. Без них ни одна стратегия обхода ' +
+        'не запустится и будет постоянно показывать ошибку.\n\n' +
+        'Перезапустить приложение с правами администратора сейчас?',
+      buttons: ['Перезапустить с правами администратора', 'Продолжить без прав (не будет работать)'],
+      defaultId: 0,
+      cancelId: 1
+    });
+
+    if (choice.response === 0) {
+      relaunchElevated();
+      return; // app.exit() уже вызван внутри relaunchElevated()
+    }
+  }
+
   zapret = new ZapretManager({
     resourcesPath: app.isPackaged
       ? path.join(process.resourcesPath, 'zapret')
@@ -158,12 +234,16 @@ ipcMain.handle('window:isMaximized', () => (mainWindow ? mainWindow.isMaximized(
 /* =========================================================
    IPC — движок обхода
    ========================================================= */
-ipcMain.handle('engine:getState', () => ({
+ipcMain.handle('engine:getState', async () => ({
   status: zapret.getStatus(),
   strategies: zapret.listStrategies(),
   config: store.store,
   engineReady: zapret.isEngineInstalled(),
-  serviceHealth: store.get('serviceHealthCache', {})
+  serviceHealth: store.get('serviceHealthCache', {}),
+  // ДОБАВЛЕНО: чтобы UI мог показать постоянное предупреждение, если
+  // пользователь нажал "Продолжить без прав" в диалоге при запуске —
+  // иначе он увидит ошибку только после клика "запустить обход".
+  isElevated: await isElevatedWin()
 }));
 
 // ИСПРАВЛЕНО: renderer (src/assets/app.js) вызывает window.pulse.getConfig()

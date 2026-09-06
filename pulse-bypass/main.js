@@ -83,6 +83,7 @@ const store = new Store({
 let mainWindow = null;
 let tray = null;
 let zapret = null;
+let isQuitting = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -107,9 +108,14 @@ function createWindow() {
   mainWindow.on('unmaximize', () => mainWindow.webContents.send('window-state', 'normal'));
 
   mainWindow.on('close', (e) => {
+    // ИСПРАВЛЕНО: используем isQuitting флаг вместо store.set
+    if (isQuitting) return;
     if (zapret && zapret.isRunning() && store.get('minimizeToTrayOnClose', true)) {
       e.preventDefault();
       mainWindow.hide();
+    } else if (zapret && zapret.isRunning()) {
+      e.preventDefault();
+      zapret.stop().then(() => { if (mainWindow) mainWindow.close(); });
     }
   });
 
@@ -142,7 +148,7 @@ function createTray() {
         click: () => { if (mainWindow) { mainWindow.show(); } else { createWindow(); } }
       },
       { type: 'separator' },
-      { label: 'Выход', click: () => { app.exit(0); } }
+      { label: 'Выход', click: () => { isQuitting = true; app.quit(); } }
     ]));
   };
 
@@ -214,9 +220,15 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', async () => {
-  store.set('minimizeToTrayOnClose', false);
-  if (zapret) await zapret.stop();
+app.on('before-quit', async (e) => {
+  // ИСПРАВЛЕНО: isQuitting флаг + preventDefault + await stop + exit.
+  if (e.defaultPrevented) return;
+  e.preventDefault();
+  isQuitting = true;
+  if (zapret) {
+    try { await zapret.stop(); } catch (err) {}
+  }
+  app.exit(0);
 });
 
 /* =========================================================
@@ -419,6 +431,9 @@ ipcMain.handle('config:addApp', async (_e, appData) => {
   });
   
   store.set('apps', list);
+  // ИСПРАВЛЕНО: вызываем applyDomainsChange() чтобы синхронизировать hostlist
+  // (даже если доменов пока нет — это гарантирует консистентность)
+  await applyDomainsChange();
   return list;
 });
 

@@ -83,11 +83,12 @@
   };
 
   function renderStrategies() {
-    // УЛУЧШЕНО: показываем только рабочие стратегии, если есть протестированные
-    const working = strategies.filter(s => s.working === true);
-    const toShow = working.length > 0 ? working : strategies;
-    
-    strategySelect.innerHTML = toShow.map((s) => {
+    // ИСПРАВЛЕНО: показываем ВСЕ стратегии — пользователь должен иметь
+    // возможность вручную выбрать любую, даже если автоподбор признал её
+    // неработающей (результат теста может зависеть от времени суток,
+    // нагрузки провайдера и т.д.). Бейджи ✓/✗ показывают результат
+    // последнего теста.
+    strategySelect.innerHTML = strategies.map((s) => {
       let badge = '';
       if (s.tested) {
         badge = s.working ? ' ✓' : ' ✗';
@@ -95,7 +96,16 @@
       return `<option value="${s.id}" title="${escapeHtml(s.description)}">${escapeHtml(s.name)}${badge}</option>`;
     }).join('');
     
-    if (engineStatus.strategyId) strategySelect.value = engineStatus.strategyId;
+    // Выбираем стратегию по приоритету:
+    // 1. Текущая активная стратегия
+    // 2. Последняя использованная (из конфига)
+    // 3. Первая подтверждённо рабочая
+    // 4. Первая в списке
+    const selectValue = engineStatus.strategyId
+      || (config.lastStrategyId && strategies.find(s => s.id === config.lastStrategyId) ? config.lastStrategyId : null)
+      || (strategies.find(s => s.working === true) ? strategies.find(s => s.working === true).id : null)
+      || (strategies.length > 0 ? strategies[0].id : null);
+    if (selectValue) strategySelect.value = selectValue;
   }
 
   function renderStatus() {

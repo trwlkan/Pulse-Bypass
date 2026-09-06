@@ -74,16 +74,20 @@
 /* ---- приложения ---- */
 .pb-app-list{ display:flex; flex-direction:column; gap:8px; margin-top:12px; }
 .pb-app-item{
-  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  display:flex; flex-direction:column; gap:10px;
   background:var(--bg); border:1px solid var(--grid); border-radius:8px; padding:10px 12px;
 }
+.pb-app-item-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .pb-app-name{ font-size:12px; color:var(--text); }
 .pb-app-path{ font-size:10px; color:var(--text-faint); margin-top:2px; word-break:break-all; }
-.pb-app-item button{
+.pb-app-domains{ font-size:10px; color:var(--text-faint); margin-top:4px; }
+.pb-app-domains-empty{ color:var(--err); opacity:0.8; }
+.pb-app-item > .pb-app-item-top > button{
   background:transparent; border:1px solid var(--grid); color:var(--text-faint);
   border-radius:5px; width:26px; height:26px; cursor:pointer; flex-shrink:0;
 }
-.pb-app-item button:hover{ border-color:var(--err); color:var(--err); }
+.pb-app-item > .pb-app-item-top > button:hover{ border-color:var(--err); color:var(--err); }
+.pb-app-add-row{ margin-top:0; }
 
 /* ---- журнал ---- */
 .pb-log{

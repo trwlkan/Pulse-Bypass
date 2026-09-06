@@ -304,7 +304,11 @@ class ZapretManager extends EventEmitter {
             this._setStatus('error');
             reject(new Error('Процесс завершился сразу после старта'));
           }
-        }, 1500);
+          // ИСПРАВЛЕНО: было 1500мс на каждый старт движка — при автоподборе
+          // это складывалось с ещё одной задержкой ниже и сильно тормозило
+          // процесс. winws.exe либо падает почти мгновенно (неверные
+          // аргументы/занят WinDivert), либо запускается за 200-400мс.
+        }, 700);
 
       } catch (err) {
         this._setStatus('error');
@@ -352,14 +356,22 @@ class ZapretManager extends EventEmitter {
     
     const testOrder = [...prioritized, ...strategiesToTest];
 
-    for (const strategy of testOrder) {
-      this._log(`Тестирую стратегию: ${strategy.name}...`);
+    for (let i = 0; i < testOrder.length; i++) {
+      const strategy = testOrder[i];
+      this._log(`Тестирую стратегию ${i + 1}/${testOrder.length}: ${strategy.name}...`);
 
       try {
         await this.start(strategy.id);
-        await new Promise((r) => setTimeout(r, 2000));
+        // ИСПРАВЛЕНО: раньше ждали фиксированные 2с "на всякий случай" после
+        // каждого запуска движка — при 4 стратегиях автоподбор занимал до
+        // 15+ секунд. winws.exe перехватывает трафик сразу после старта, так
+        // что для большинства провайдеров достаточно ~800мс, чтобы дать
+        // первым TCP/TLS-хендшейкам пройти через новый фильтр.
+        await new Promise((r) => setTimeout(r, 800));
 
-        const success = await this._testConnection(targets);
+        // Таймаут теста тоже укорочен (5с -> 3с): если стратегия не
+        // проходит DPI, соединение почти всегда рвётся гораздо раньше.
+        const success = await this._testConnection(targets, 3000);
 
         if (success) {
           this._log(`✓ Стратегия ${strategy.name} работает!`);

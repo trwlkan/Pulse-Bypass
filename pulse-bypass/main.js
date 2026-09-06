@@ -3,7 +3,7 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 
 const ZapretManager = require('./engine/zapret-manager');
 
@@ -112,8 +112,21 @@ app.whenReady().then(async () => {
   zapret.on('status', (s) => { if (mainWindow) mainWindow.webContents.send('engine-status', s); });
 
   if (store.get('autostartEngine')) {
+    // ИСПРАВЛЕНО: раньше при автозапуске всегда бралась последняя выбранная
+    // стратегия, даже если на этом устройстве/у этого провайдера она ни разу
+    // не была проверена (или не проверялась вовсе) — именно из-за этого
+    // одному человеку YouTube открывался, а другому с тем же билдом нет.
+    // Теперь при отсутствии подтверждённо рабочей стратегии сразу
+    // запускается автоподбор.
     const id = store.get('lastStrategyId');
-    if (id) zapret.start(id).catch(() => {});
+    const cached = id ? zapret.strategyTestResults[id] : null;
+    if (cached && cached.success) {
+      zapret.start(id).catch(() => {});
+    } else {
+      zapret.autoDetect().then((result) => {
+        if (result && result.strategyId) store.set('lastStrategyId', result.strategyId);
+      }).catch(() => {});
+    }
   }
 
   app.on('activate', () => {
@@ -153,6 +166,11 @@ ipcMain.handle('engine:getState', () => ({
   serviceHealth: store.get('serviceHealthCache', {})
 }));
 
+// ИСПРАВЛЕНО: renderer (src/assets/app.js) вызывает window.pulse.getConfig()
+// отдельно от getState() после каждого добавления домена/приложения, но
+// соответствующего IPC-канала не было — вызов падал молча.
+ipcMain.handle('config:get', () => store.store);
+
 ipcMain.handle('engine:start', async (_e, strategyId) => {
   store.set('lastStrategyId', strategyId);
   return zapret.start(strategyId);
@@ -189,7 +207,12 @@ ipcMain.handle('engine:checkServiceHealth', async (_e, services) => {
 });
 
 /**
- * НОВОЕ: получение списка запущенных процессов
+ * Получение списка запущенных процессов.
+ * ИСПРАВЛЕНО: "wmic" удалён в свежих сборках Windows 11 (начиная с 24H2),
+ * из-за чего на части устройств этот список всегда возвращался пустым и
+ * кнопка "добавить из запущенных" не работала. Переключились на
+ * PowerShell + Get-Process, которая доступна на всех поддерживаемых
+ * версиях Windows.
  */
 ipcMain.handle('system:getRunningProcesses', async () => {
   return new Promise((resolve) => {
@@ -198,33 +221,43 @@ ipcMain.handle('system:getRunningProcesses', async () => {
       return;
     }
 
-    exec('wmic process get Name,ExecutablePath /format:csv', (error, stdout) => {
-      if (error) {
-        resolve([]);
-        return;
-      }
+    const psCommand =
+      'Get-Process | Where-Object { $_.Path } | ' +
+      'Select-Object -Property Name, Path -Unique | ConvertTo-Json -Compress';
 
-      const lines = stdout.split('\n').filter(l => l.trim());
-      const processes = [];
-      const seen = new Set();
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', psCommand],
+      { maxBuffer: 10 * 1024 * 1024 },
+      (error, stdout) => {
+        if (error) {
+          resolve([]);
+          return;
+        }
 
-      for (let i = 2; i < lines.length; i++) {
-        const parts = lines[i].split(',');
-        if (parts.length >= 3) {
-          const exePath = parts[1].trim();
-          const name = parts[2].trim();
-          
-          if (exePath && name && exePath.toLowerCase().endsWith('.exe') && !seen.has(exePath.toLowerCase())) {
-            seen.add(exePath.toLowerCase());
-            processes.push({ name: name.replace('.exe', ''), exePath });
+        try {
+          let parsed = JSON.parse(stdout.trim() || '[]');
+          if (!Array.isArray(parsed)) parsed = [parsed];
+
+          const seen = new Set();
+          const processes = [];
+          for (const p of parsed) {
+            const exePath = p && p.Path ? String(p.Path).trim() : '';
+            const name = p && p.Name ? String(p.Name).trim() : '';
+            const key = exePath.toLowerCase();
+            if (exePath && name && !seen.has(key)) {
+              seen.add(key);
+              processes.push({ name, exePath });
+            }
           }
+
+          processes.sort((a, b) => a.name.localeCompare(b.name));
+          resolve(processes);
+        } catch (e) {
+          resolve([]);
         }
       }
-
-      // Сортируем по имени
-      processes.sort((a, b) => a.name.localeCompare(b.name));
-      resolve(processes);
-    });
+    );
   });
 });
 

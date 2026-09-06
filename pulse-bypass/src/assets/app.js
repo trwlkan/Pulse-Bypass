@@ -126,8 +126,9 @@
     if (engineStatus.strategyId) strategySelect.value = engineStatus.strategyId;
   }
 
+  const ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   function escapeHtml(s) {
-    return String(s == null ? '' : s).replace(/[&<>\"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;' }[c]));
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ESCAPE_MAP[c]);
   }
 
   /* ==================================================================== */
@@ -176,14 +177,25 @@
     const list = config.apps || [];
     const box = $('appList');
     if (!list.length) { box.innerHTML = '<div class="pb-chip-empty">приложения пока не добавлены</div>'; return; }
+    // ИСПРАВЛЕНО: раньше у добавленного приложения не было способа указать
+    // его домены — поле domains оставалось пустым навсегда, поэтому обход
+    // никогда не подхватывал трафик этого приложения. Теперь у каждого
+    // приложения есть своя строка добавления домена (использует тот же
+    // config:addAppDomain, что уже был в main.js, но не был подключён к UI).
     box.innerHTML = list.map((a) => `
       <div class="pb-app-item" data-id="${a.id}">
-        <div>
-          <div class="pb-app-name">${escapeHtml(a.name)}</div>
-          <div class="pb-app-path">${escapeHtml(a.exePath)}</div>
-          ${Array.isArray(a.domains) && a.domains.length > 0 ? `<div class="pb-app-domains">Домены: ${a.domains.join(', ')}</div>` : ''}
+        <div class="pb-app-item-top">
+          <div>
+            <div class="pb-app-name">${escapeHtml(a.name)}</div>
+            <div class="pb-app-path">${escapeHtml(a.exePath)}</div>
+            ${Array.isArray(a.domains) && a.domains.length > 0 ? `<div class="pb-app-domains">домены: ${a.domains.map(escapeHtml).join(', ')}</div>` : '<div class="pb-app-domains pb-app-domains-empty">домены не заданы — трафик приложения не будет обходиться, пока вы не добавите хотя бы один домен ниже</div>'}
+          </div>
+          <button data-remove-app="${a.id}" title="удалить приложение">✕</button>
         </div>
-        <button data-remove-app="${a.id}" title="удалить">✕</button>
+        <div class="pb-add-row pb-app-add-row">
+          <input type="text" data-app-domain-input="${a.id}" placeholder="домен приложения — например: api.example.com" spellcheck="false" autocomplete="off">
+          <button class="ghost-btn" data-add-app-domain="${a.id}">добавить</button>
+        </div>
       </div>`).join('');
   }
 
@@ -241,41 +253,55 @@
   /* 6. Обработчики событий */
   /* ==================================================================== */
   
-  // Переключатель обхода
+  // Переключатель обхода.
+  // ИСПРАВЛЕНО: если на этом устройстве/у этого провайдера ещё ни одна
+  // стратегия не подтверждена рабочей, кнопка теперь сама запускает
+  // автоподбор вместо того, чтобы слепо стартовать то, что выбрано в
+  // списке (обычно первую по умолчанию — "General") — она вполне может не
+  // проходить именно через DPI конкретного провайдера. Так же ведёт себя
+  // Happ Proxy и подобные: одна кнопка, которая сама находит рабочий вариант.
   toggleBtn.addEventListener('click', async () => {
     if (!hasEngine) return;
     if (engineStatus.status === 'running') {
       await window.pulse.stop();
-    } else {
-      const id = strategySelect.value;
-      if (!id) { toast('Выберите стратегию'); return; }
-      try {
-        await window.pulse.start(id);
-        toast('Обход запущен');
-      } catch (err) {
-        toast('Ошибка: ' + err.message);
-      }
+      return;
+    }
+
+    const hasConfirmedWorking = strategies.some((s) => s.working === true);
+    if (!hasConfirmedWorking) {
+      await runAutoDetect('Ни одна стратегия ещё не проверена на этом устройстве — подбираю рабочую…');
+      return;
+    }
+
+    const id = strategySelect.value;
+    if (!id) { toast('Выберите стратегию'); return; }
+    try {
+      await window.pulse.start(id);
+      toast('Обход запущен');
+    } catch (err) {
+      toast('Ошибка: ' + err.message);
     }
   });
 
-  // Автоподбор
-  autoDetectBtn.addEventListener('click', async () => {
-    if (!hasEngine) return;
+  async function runAutoDetect(startToast) {
+    if (startToast) toast(startToast);
     try {
-      toast('Начинаю автоподбор стратегии...');
       const result = await window.pulse.autoDetect();
-      if (result.success) {
-        toast('✓ Найдена рабочая стратегия');
-        const state = await window.pulse.getState();
-        strategies = state.strategies || [];
-        renderStrategies();
-      } else {
-        toast('Не удалось найти рабочую стратегию');
-      }
+      const state = await window.pulse.getState();
+      strategies = state.strategies || [];
+      engineStatus = state.status || engineStatus;
+      renderStrategies();
+      renderStatus();
+      toast(result.success ? '✓ Найдена рабочая стратегия, обход запущен' : '✗ Не удалось найти рабочую стратегию');
+      return result;
     } catch (err) {
       toast('Ошибка автоподбора: ' + err.message);
+      return { success: false };
     }
-  });
+  }
+
+  // Автоподбор
+  autoDetectBtn.addEventListener('click', () => runAutoDetect('Начинаю автоподбор стратегии...'));
 
   // НОВОЕ: Проверка работоспособности сервисов
   if (checkHealthBtn) {
@@ -441,6 +467,39 @@
     return modal;
   }
 
+  // НОВОЕ: добавление домена конкретному приложению
+  async function addAppDomainFromInput(appId) {
+    if (!hasEngine) return;
+    const input = document.querySelector(`[data-app-domain-input="${appId}"]`);
+    if (!input) return;
+    const domain = input.value.trim();
+    if (!domain) return;
+    try {
+      await window.pulse.addAppDomain(appId, domain);
+      config.apps = await window.pulse.getConfig().then((c) => c.apps);
+      renderApps();
+      toast('Домен приложения добавлен');
+    } catch (err) {
+      toast('Ошибка: ' + err.message);
+    }
+  }
+
+  document.addEventListener('click', async (e) => {
+    const addAppDomainBtn = e.target.closest('[data-add-app-domain]');
+    if (addAppDomainBtn && hasEngine) {
+      e.stopPropagation();
+      await addAppDomainFromInput(addAppDomainBtn.dataset.addAppDomain);
+    }
+  });
+
+  document.addEventListener('keydown', async (e) => {
+    const input = e.target.closest('[data-app-domain-input]');
+    if (input && e.key === 'Enter') {
+      e.preventDefault();
+      await addAppDomainFromInput(input.dataset.appDomainInput);
+    }
+  });
+
   // Удаление домена/приложения
   document.addEventListener('click', async (e) => {
     const removeD = e.target.closest('[data-remove-domain]');
@@ -523,14 +582,11 @@
     });
   }
 
-  // Темы
+  // Темы: переключение уже полностью обрабатывает assets/theme.js
+  // (атрибут data-theme на <html> + сохранение через updateConfig). Здесь
+  // достаточно только закрыть бургер-меню после выбора.
   document.querySelectorAll('[data-theme]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const theme = btn.dataset.theme;
-      document.body.className = 'theme-' + theme;
-      if (hasEngine) await window.pulse.setTheme(theme);
-      closeBurger();
-    });
+    btn.addEventListener('click', () => closeBurger());
   });
 
   // Журнал
